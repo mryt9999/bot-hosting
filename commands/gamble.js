@@ -1,0 +1,110 @@
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const profileModel = require("../models/profileSchema");
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('gamble')
+        .setDescription('gamble points with 50/50 odds')
+        .addIntegerOption(option =>
+            option.setName('amount')
+                .setDescription('The amount of points to gamble')
+                .setRequired(true)
+                .setMinValue(1)),
+    async execute(interaction, profileData, opts = {}) {
+        // accept either opts.ephemeral (boolean) or opts.flags (MessageFlags value)
+        const callerFlags = opts.flags ?? (opts.ephemeral ? MessageFlags.Ephemeral : undefined);
+        const flags = callerFlags ? { flags: callerFlags } : {};
+        const deferOpts = callerFlags ? { flags: callerFlags } : {};
+
+        // Determine amount: prefer opts.amount (from modal) otherwise use slash option
+        const amount = typeof opts.amount === 'number' ? opts.amount : interaction.options?.getInteger('amount');
+        if (!amount || isNaN(amount) || amount <= 0) {
+            if (!interaction.replied && !interaction.deferred) {
+                return await interaction.reply({ content: 'Invalid gamble amount.', ...flags });
+            } else {
+                return await interaction.followUp({ content: 'Invalid gamble amount.', ...flags });
+            }
+        }
+
+        // ensure profileData exists
+        if (!profileData) {
+            try {
+                profileData = await profileModel.findOne({ userId: interaction.user.id });
+                if (!profileData) {
+                    profileData = await profileModel.create({
+                        userId: interaction.user.id,
+                        serverID: interaction.guild?.id ?? null,
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch/create profileData for gamble:', err);
+            }
+        }
+
+        const balance = profileData?.balance ?? 0;
+
+        if (amount > balance) {
+            // decide ephemeral behavior:
+            // - respect caller flags (opts.flags or opts.ephemeral)
+            // - otherwise, make insufficient-funds ephemeral when amount came from the slash integer option
+            const amountFromSlashOption = typeof opts.amount !== 'number' && !!interaction.options?.getInteger('amount');
+            const ephemeralForInsuff = callerFlags ?? (amountFromSlashOption ? MessageFlags.Ephemeral : undefined);
+            const insuffFlags = ephemeralForInsuff ? { flags: ephemeralForInsuff } : {};
+
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: "You do not have enough points to make this gamble.", ...insuffFlags });
+                } else if (interaction.deferred) {
+                    await interaction.editReply("You do not have enough points to make this gamble.");
+                } else {
+                    await interaction.followUp({ content: "You do not have enough points to make this gamble.", ...insuffFlags });
+                }
+            } catch (err) {
+                console.error('Failed to notify insufficient funds:', err);
+            }
+            return;
+        }
+
+        // Defer reply if not already (respect ephemeral option)
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply(deferOpts);
+            }
+        } catch (err) {
+            console.error('Failed to defer gamble reply:', err);
+        }
+
+        // 50/50 gamble
+        const win = Math.random() < 0.5;
+        try {
+            if (win) {
+                await profileModel.findOneAndUpdate(
+                    { userId: interaction.user.id },
+                    { $inc: { balance: amount } }
+                );
+                if (interaction.deferred) {
+                    await interaction.editReply(`🎉 Congratulations! You won ${amount} points!`);
+                } else {
+                    await interaction.followUp({ content: `🎉 Congratulations! You won ${amount} points!`, ...flags });
+                }
+            } else {
+                await profileModel.findOneAndUpdate(
+                    { userId: interaction.user.id },
+                    { $inc: { balance: -amount } }
+                );
+                if (interaction.deferred) {
+                    await interaction.editReply(`💔 you lost ${amount} points. Better luck next time!`);
+                } else {
+                    await interaction.followUp({ content: `💔 you lost ${amount} points. Better luck next time!`, ...flags });
+                }
+            }
+        } catch (err) {
+            console.error('Failed during gamble update/reply:', err);
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: 'Error processing gamble.', ...flags });
+                }
+            } catch { }
+        }
+    },
+};
