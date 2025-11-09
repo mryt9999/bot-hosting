@@ -47,13 +47,13 @@ module.exports = {
 
             try {
                 if (interaction.deferred) {
-                    await interaction.editReply(msg);
+                    await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
                 } else if (!interaction.replied) {
                     // not deferred and not replied -> reply now (use flags if needed)
                     if (ephemeral) await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
                     else await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
                 } else {
-                    await interaction.followUp({ content: msg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
+                    await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
                 }
                 // Auto-delete the reply after 30 seconds if ephemeral
                 if (ephemeral) {
