@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 const mongoose = require('mongoose');
+const { roleRequirements } = require("../globalValues.json");
 
 module.exports = {
     name: Events.ClientReady,
@@ -48,6 +49,7 @@ module.exports = {
                 }
             }
         });
+
 
         // Log any database connection issues
         mongoose.connection.on('error', (error) => {

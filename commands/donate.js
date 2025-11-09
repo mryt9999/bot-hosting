@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const profileModel = require("../models/profileSchema");
+const balanceChangeEvent = require("../events/balanceChange");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -112,6 +113,21 @@ module.exports = {
             // update sender and recipient (not atomic but acceptable for most bots)
             await profileModel.findOneAndUpdate({ userId: senderId }, { $inc: { balance: -amount } });
             await profileModel.findOneAndUpdate({ userId: targetId }, { $inc: { balance: amount } });
+            // FIRE BALANCE CHANGE EVENTS
+            let senderMember;
+            try {
+                senderMember = await interaction.guild.members.fetch(senderId);
+            } catch (err) {
+                console.error('Failed to fetch sender member for balance change event:', err);
+            }
+            let targetMember;
+            try {
+                targetMember = await interaction.guild.members.fetch(targetId);
+            } catch (err) {
+                console.error('Failed to fetch target member for balance change event:', err);
+            }
+            balanceChangeEvent.execute(senderMember);
+            balanceChangeEvent.execute(targetMember);
         } catch (err) {
             console.error('Failed to update balances for donate:', err);
             const msg = 'Failed to complete the donation. Please try again later.';

@@ -56,7 +56,6 @@ module.exports = {
         }
 
 
-
         const embed = new EmbedBuilder()
             .setTitle(`${username}'s Wallet`)
             .setColor(0x57F287) // green tint

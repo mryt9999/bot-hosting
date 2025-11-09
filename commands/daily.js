@@ -2,6 +2,7 @@ const { SlashCommandBuilder, time, MessageFlags } = require('discord.js');
 const parseMilliseconds = require("parse-ms-2");
 const profileModel = require("../models/profileSchema");
 const { dailyMin, dailyMax } = require("../globalValues.json");
+const balanceChangeEvent = require("../events/balanceChange");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -83,6 +84,12 @@ module.exports = {
         const randomPoints = Math.floor(Math.random() * (dailyMax - dailyMin + 1)) + dailyMin;
 
         try {
+            let targetMember;
+            try {
+                targetMember = await interaction.guild.members.fetch(interaction.user.id);
+            } catch (err) {
+                console.error('Failed to fetch target member for balance change event:', err);
+            }
             await profileModel.findOneAndUpdate(
                 { userId: id },
                 {
@@ -91,6 +98,8 @@ module.exports = {
                 },
                 { upsert: true }
             );
+            // FIRE BALANCE CHANGE EVENT
+            balanceChangeEvent.execute(targetMember);
         } catch (err) {
             console.error('Failed to update daily claim:', err);
             try {

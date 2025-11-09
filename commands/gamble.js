@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags, time } = require('discord.js');
 const profileModel = require("../models/profileSchema");
+const balanceChangeEvent = require("../events/balanceChange");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -93,6 +94,14 @@ module.exports = {
                     { userId: interaction.user.id },
                     { $inc: { balance: amount } }
                 );
+                let targetMember;
+                try {
+                    targetMember = await interaction.guild.members.fetch(interaction.user.id);
+                } catch (err) {
+                    console.error('Failed to fetch target member for balance change event:', err);
+                }
+                // FIRE BALANCE CHANGE EVENT
+                balanceChangeEvent.execute(targetMember);
                 if (interaction.deferred) {
                     await interaction.editReply(`🎉 Congratulations! You won ${amount} points!`);
                 } else {
@@ -113,6 +122,14 @@ module.exports = {
                     { userId: interaction.user.id },
                     { $inc: { balance: -amount } }
                 );
+                let targetMember;
+                try {
+                    targetMember = await interaction.guild.members.fetch(interaction.user.id);
+                } catch (err) {
+                    console.error('Failed to fetch target member for balance change event:', err);
+                }
+                // FIRE BALANCE CHANGE EVENT
+                balanceChangeEvent.execute(targetMember);
                 if (interaction.deferred) {
                     await interaction.editReply(`💔 you lost ${amount} points. Better luck next time!`);
                 } else {

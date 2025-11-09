@@ -1,4 +1,26 @@
 {
     "dailyMin": 1000,
-    "dailyMax": 2000
+    "dailyMax": 2000,
+    "roleRequirements": [
+        {
+            "roleId": "1437171794518737088",
+            "pointRequirement": 5000
+        },
+        {
+            "roleId": "1437174051910062213",
+            "pointRequirement": 30000
+        },
+        {
+            "roleId": "1437173475285532755",
+            "pointRequirement": 100000
+        },
+        {
+            "roleId": "1437174630929662072",
+            "pointRequirement": 300000
+        },
+        {
+            "roleId": "1437172924313370696",
+            "pointRequirement": 1000000
+        }
+    ]
 }
