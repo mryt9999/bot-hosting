@@ -51,7 +51,7 @@ module.exports = {
                 } else if (!interaction.replied) {
                     // not deferred and not replied -> reply now (use flags if needed)
                     if (ephemeral) await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
-                    else await interaction.reply({ content: msg });
+                    else await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
                 } else {
                     await interaction.followUp({ content: msg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
                 }

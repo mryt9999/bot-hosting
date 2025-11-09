@@ -40,9 +40,9 @@ module.exports = {
         if (senderId === targetId) {
             const msg = "You can't donate to yourself.";
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: msg, ...flags });
+                await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
             } else {
-                await interaction.followUp({ content: msg, ...flags });
+                await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
             }
             // Auto-delete the reply after 30 seconds if ephemeral
             if (ephemeral) {
@@ -73,11 +73,11 @@ module.exports = {
         if (amount > senderBalance) {
             const msg = `Insufficient funds. You have ${senderBalance.toLocaleString()} points.`;
             if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: msg, ...flags });
+                await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
             } else if (interaction.deferred) {
-                await interaction.editReply({ content: msg });
+                await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
             } else {
-                await interaction.followUp({ content: msg, ...flags });
+                await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
             }
             // Auto-delete the reply after 30 seconds if ephemeral
             if (ephemeral) {
