@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('balance')
@@ -25,6 +26,16 @@ module.exports = {
                 await interaction.reply({ embeds: [embed], ...flags });
             } else {
                 await interaction.followUp({ embeds: [embed], ...flags });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
             }
         } catch (err) {
             console.error('Failed to send balance embed:', err);

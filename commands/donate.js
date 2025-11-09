@@ -16,6 +16,7 @@ module.exports = {
                 .setMinValue(1)),
     async execute(interaction, profileData, opts = {}) {
         // accept either opts.flags (MessageFlags) or opts.ephemeral (legacy boolean)
+        const ephemeral = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
         const callerFlags = opts.flags ?? (opts.ephemeral ? MessageFlags.Ephemeral : undefined);
         const flags = callerFlags ? { flags: callerFlags } : {};
 
@@ -38,8 +39,22 @@ module.exports = {
         const senderId = interaction.user.id;
         if (senderId === targetId) {
             const msg = "You can't donate to yourself.";
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
-            return interaction.followUp({ content: msg, ...flags });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: msg, ...flags });
+            } else {
+                await interaction.followUp({ content: msg, ...flags });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
+            }
+            return;
         }
 
         // ensure sender profile exists (profileData may already be provided)
@@ -57,9 +72,24 @@ module.exports = {
         const senderBalance = profileData?.balance ?? 0;
         if (amount > senderBalance) {
             const msg = `Insufficient funds. You have ${senderBalance.toLocaleString()} points.`;
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
-            if (interaction.deferred) return interaction.editReply({ content: msg });
-            return interaction.followUp({ content: msg, ...flags });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: msg, ...flags });
+            } else if (interaction.deferred) {
+                await interaction.editReply({ content: msg });
+            } else {
+                await interaction.followUp({ content: msg, ...flags });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
+            }
+            return;
         }
 
         // Ensure recipient profile exists
@@ -118,6 +148,16 @@ module.exports = {
                 await interaction.reply({ embeds: [embed], ...flags });
             } else {
                 await interaction.followUp({ embeds: [embed], ...flags });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
             }
         } catch (err) {
             console.error('Failed to send donate confirmation:', err);

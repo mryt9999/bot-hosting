@@ -5,11 +5,9 @@ const profileModel = require("../models/profileSchema");
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
-
-
         ///////////////////////////////
 
-        //  make this remove ephemeral messages after 5 seconds
+        //  make this remove ephemeral messages after 30 seconds
         const replyEphemeral = async (options) => {
             const message = await interaction.reply({ ...options, flags: MessageFlags.Ephemeral, fetchReply: true });
             setTimeout(async () => {
@@ -18,7 +16,7 @@ module.exports = {
                 } catch (err) {
                     // ignore
                 }
-            }, 60000);
+            }, 30000);
             return message;
         };
         /////////////////////////////////

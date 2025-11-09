@@ -12,6 +12,7 @@ module.exports = {
                 .setMinValue(1)),
     async execute(interaction, profileData, opts = {}) {
         // accept either opts.ephemeral (boolean) or opts.flags (MessageFlags value)
+        const ephemeral = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
         const callerFlags = opts.flags ?? (opts.ephemeral ? MessageFlags.Ephemeral : undefined);
         const flags = callerFlags ? { flags: callerFlags } : {};
         const deferOpts = callerFlags ? { flags: callerFlags } : {};
@@ -59,6 +60,16 @@ module.exports = {
                 } else {
                     await interaction.followUp({ content: "You do not have enough points to make this gamble.", ...insuffFlags });
                 }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
             } catch (err) {
                 console.error('Failed to notify insufficient funds:', err);
             }
@@ -87,6 +98,16 @@ module.exports = {
                 } else {
                     await interaction.followUp({ content: `🎉 Congratulations! You won ${amount} points!`, ...flags });
                 }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
             } else {
                 await profileModel.findOneAndUpdate(
                     { userId: interaction.user.id },
@@ -96,6 +117,16 @@ module.exports = {
                     await interaction.editReply(`💔 you lost ${amount} points. Better luck next time!`);
                 } else {
                     await interaction.followUp({ content: `💔 you lost ${amount} points. Better luck next time!`, ...flags });
+                }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
                 }
             }
         } catch (err) {

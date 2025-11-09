@@ -55,6 +55,16 @@ module.exports = {
                 } else {
                     await interaction.followUp({ content: msg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
                 }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
             } catch (err) {
                 console.error('Failed to send cooldown message:', err);
             }
@@ -106,6 +116,16 @@ module.exports = {
                 else await interaction.reply({ content: successMsg });
             } else {
                 await interaction.followUp({ content: successMsg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
             }
         } catch (err) {
             console.error('Failed to send daily success message:', err);

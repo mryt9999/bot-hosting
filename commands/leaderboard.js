@@ -7,6 +7,7 @@ module.exports = {
         .setName('leaderboard')
         .setDescription('Shows top 10 players with highest points'),
     async execute(interaction, profileData, opts = {}) {
+        ephemeral = !!opts.ephemeral;
         // defer reply if not already deferred/replied (use ephemeral if requested)
         try {
             if (!interaction.replied && !interaction.deferred) {
@@ -74,6 +75,16 @@ module.exports = {
 
             } else {
                 await interaction.followUp({ embeds: [leaderboardEmbed], ephemeral: !!opts.ephemeral });
+            }
+            // Auto-delete the reply after 30 seconds if ephemeral
+            if (ephemeral) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (err) {
+                        // ignore
+                    }
+                }, 30000);
             }
 
         } catch (err) {
