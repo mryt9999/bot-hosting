@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags, time } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 
 module.exports = {
@@ -137,5 +137,30 @@ module.exports = {
                 }
             } catch { }
         }
+
+        // ANNOUNCEMENT: attempt to send a public message to a channel
+        (async () => {
+            try {
+                // channel priority: opts.announceChannelId -> env GAMBLING_CHANNEL_ID -> channel named "gambling" -> guild.systemChannel -> first text channel
+                const announceChannelId = opts.announceChannelId ?? process.env.GAMBLING_CHANNEL_ID;
+                let announceChannel = null;
+
+                if (announceChannelId && interaction.guild) {
+                    announceChannel = interaction.guild.channels.cache.get(announceChannelId) ?? await interaction.guild.channels.fetch(announceChannelId).catch(() => null);
+                }
+
+                if (!announceChannel && interaction.guild) {
+                    announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'gambling' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
+                }
+
+                if (!announceChannel) return;
+
+                msg = win ? `🎉 ${interaction.user} Won ${amount} points!` : `💔 ${interaction.user} lost ${amount} points.`;
+
+                await announceChannel.send({ content: msg, timestamp: Date.now() });
+            } catch (err) {
+                console.error('Failed to send GAMBLING announcement:', err);
+            }
+        })();
     },
 };
