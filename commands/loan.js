@@ -42,6 +42,11 @@ module.exports = {
             subcommand
                 .setName('view-owed')
                 .setDescription('View loans you owe') //gives list of loans owed with buttons to switch pages if more than 5
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('view-contracts')
+                .setDescription('View loan contracts') //gives list of loan contracts with buttons to switch pages if more than 5
         ),
     async execute(interaction) {
         await interaction.deferReply();
@@ -53,6 +58,8 @@ module.exports = {
             const amount = interaction.options.getInteger('amount');
 
             // Handle sending loan logic here
+            // Ensure that the user does not already have an active loan with the target player
+            // send a contract to the target player for approval, if they dont have an existing loan from the sender
 
         } else if (subcommand === 'repay') {
             const amount = interaction.options.getInteger('amount');
@@ -67,6 +74,11 @@ module.exports = {
 
             // Handle viewing owed loans logic here
 
+        }
+        else if (subcommand === 'view-contracts') {
+
+            // Handle viewing loan contracts logic here
+            //if you accepted or rejected a contract, update both users' profiles accordingly
         }
 
         await interaction.editReply({ content: 'Loan command executed' });

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const loan = require('../commands/loan');
 
 /**
  * User profile schema for the economy system
@@ -10,6 +11,8 @@ const mongoose = require('mongoose');
  * @property {number} lastDailyRolePay - Timestamp of last daily role pay in milliseconds (default: 0)
  * @property {Array<Object>} loans - Array of loan objects where the user is a creditor
  * @property {Array<Object>} loansOwed - Array of loan objects where the user is a debtor
+ * @property {Array<Object>} loanContractsSent - Array of loan contract objects sent by the user
+ * @property {Array<Object>} loanContractsReceived - Array of loan contract objects received by the user
  */
 const profileSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -28,6 +31,22 @@ const profileSchema = new mongoose.Schema({
         durationLeft: { type: Number, required: true }, // in hours
         amount: { type: Number, required: true },
         amountPaid: { type: Number, default: 0 },
+    }],
+    loanContractsSent: [{
+        contractId: { type: String, required: true },
+        creditorId: { type: String, required: true },
+        debtorId: { type: String, required: true },
+        amount: { type: Number, required: true },
+        amountToPay: { type: Number, required: true },
+        duration: { type: Number, required: true }, // in hours
+    }],
+    loanContractsReceived: [{
+        contractId: { type: String, required: true },
+        creditorId: { type: String, required: true },
+        debtorId: { type: String, required: true },
+        amount: { type: Number, required: true },
+        amountToPay: { type: Number, required: true },
+        duration: { type: Number, required: true }, // in hours
     }],
 });
 
