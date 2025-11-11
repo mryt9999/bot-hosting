@@ -19,11 +19,13 @@ const profileSchema = new mongoose.Schema({
     lastDailyRolePay: { type: Number, default: 0 },
     loans: [{
         debtorId: { type: String, required: true },
+        durationLeft: { type: Number, required: true }, // in hours
         amount: { type: Number, required: true },
         amountPaid: { type: Number, default: 0 },
     }],
     loansOwed: [{
         creditorId: { type: String, required: true },
+        durationLeft: { type: Number, required: true }, // in hours
         amount: { type: Number, required: true },
         amountPaid: { type: Number, default: 0 },
     }],

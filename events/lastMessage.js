@@ -28,7 +28,8 @@ module.exports = {
                         //push a table containing the role mention and the point reward
                         //create new table
                         const roleTable = new Map();
-                        roleTable.set(`<@&${roleId}>`, pointReward);
+                        //dont make the role mention ping ussers
+                        roleTable.set(`${message.guild.roles.cache.get(roleId).name}`, pointReward);
                         rolesPaidFor.push(roleTable);
                     }
                 }
