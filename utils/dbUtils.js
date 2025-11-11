@@ -63,10 +63,10 @@ async function transferPoints(senderId, receiverId, amount) {
 
         await session.commitTransaction();
         return { success: true, sender, receiver };
-    } catch (err) {
+    } catch (_err) {
         try {
             await session.abortTransaction();
-        } catch (e) {
+        } catch (_e) {
             // Ignore abort errors
         }
 

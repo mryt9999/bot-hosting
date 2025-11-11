@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * User profile schema for the economy system
@@ -15,6 +15,6 @@ const profileSchema = new mongoose.Schema({
     lastDaily: { type: Number, default: 0 },
 });
 
-const model = mongoose.model("economydb", profileSchema);
+const model = mongoose.model('economydb', profileSchema);
 
 module.exports = model;

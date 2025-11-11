@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const profileModel = require("../models/profileSchema");
-const balanceChangeEvent = require("../events/balanceChange");
-const { transferPoints, ensureProfile } = require('../utils/dbUtils');
+const profileModel = require('../models/profileSchema');
+const balanceChangeEvent = require('../events/balanceChange');
+const { transferPoints } = require('../utils/dbUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -28,13 +28,13 @@ module.exports = {
 
         if (!targetId) {
             const msg = 'No recipient specified.';
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
+            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
             return interaction.followUp({ content: msg, ...flags });
         }
 
         if (!amount || isNaN(amount) || amount <= 0) {
             const msg = 'Please provide a valid positive amount to donate.';
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
+            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
             return interaction.followUp({ content: msg, ...flags });
         }
 
@@ -51,7 +51,7 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
@@ -67,7 +67,7 @@ module.exports = {
                     profileData = await profileModel.create({ userId: senderId, serverID: interaction.guild?.id ?? null });
                 }
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to load sender profile:', err);
         }
 
@@ -86,7 +86,7 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
@@ -98,11 +98,11 @@ module.exports = {
         let transferResult;
         try {
             transferResult = await transferPoints(senderId, targetId, amount);
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to execute transferPoints:', err);
             const msg = 'Failed to complete the donation. Please try again later.';
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
-            if (interaction.deferred) return interaction.editReply({ content: msg });
+            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
+            if (interaction.deferred) {return interaction.editReply({ content: msg });}
             return interaction.followUp({ content: msg, ...flags });
         }
 
@@ -123,7 +123,7 @@ module.exports = {
                     setTimeout(async () => {
                         try {
                             await interaction.deleteReply();
-                        } catch (err) {
+                        } catch (_err) {
                             // ignore
                         }
                     }, 30000);
@@ -133,8 +133,8 @@ module.exports = {
                 // Other errors (invalid_amount, db_error)
                 console.error('Transfer failed:', transferResult.reason, transferResult.error);
                 const msg = 'Failed to complete the donation. Please try again later.';
-                if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
-                if (interaction.deferred) return interaction.editReply({ content: msg });
+                if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
+                if (interaction.deferred) {return interaction.editReply({ content: msg });}
                 return interaction.followUp({ content: msg, ...flags });
             }
         }
@@ -143,13 +143,13 @@ module.exports = {
         let senderMember;
         try {
             senderMember = await interaction.guild.members.fetch(senderId);
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to fetch sender member for balance change event:', err);
         }
         let targetMember;
         try {
             targetMember = await interaction.guild.members.fetch(targetId);
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to fetch target member for balance change event:', err);
         }
         balanceChangeEvent.execute(senderMember);
@@ -172,7 +172,7 @@ module.exports = {
                 { name: 'To', value: `${recipientUser.username} (<@${targetId}>)`, inline: true },
                 { name: 'Amount', value: `🪙 ${amount.toLocaleString()} points`, inline: false }
             )
-            .setFooter({ text: `Thank you for supporting other players!` })
+            .setFooter({ text: 'Thank you for supporting other players!' })
             .setTimestamp();
 
         // send interaction confirmation
@@ -189,12 +189,12 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to send donate confirmation:', err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
@@ -218,7 +218,7 @@ module.exports = {
                     announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'donations' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
                 }
 
-                if (!announceChannel) return;
+                if (!announceChannel) {return;}
 
                 // build a public announcement embed (slightly different for channel)
                 const announceEmbed = new EmbedBuilder()
@@ -233,7 +233,7 @@ module.exports = {
                     .setTimestamp();
 
                 await announceChannel.send({ embeds: [announceEmbed] });
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to send donation announcement:', err);
             }
         })();

@@ -29,13 +29,13 @@ async function safeReply(interaction, options = {}) {
             setTimeout(async () => {
                 try {
                     await interaction.deleteReply();
-                } catch (err) {
+                } catch (_err) {
                     // Silently ignore - message may have been manually deleted
                 }
             }, deleteAfter);
         }
-    } catch (err) {
-        console.error('safeReply failed:', err);
+    } catch (_err) {
+        console.error('safeReply failed:', _err);
     }
 }
 

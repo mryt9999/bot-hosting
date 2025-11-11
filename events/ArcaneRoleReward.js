@@ -1,6 +1,6 @@
 const { Events } = require('discord.js');
-const profileModel = require("../models/profileSchema");
-const { ArcaneRoleRewards } = require("../globalValues.json");
+const profileModel = require('../models/profileSchema');
+const { ArcaneRoleRewards } = require('../globalValues.json');
 
 // Event handler for when a member receives an Arcane role
 // Awards points based on the role they received
@@ -42,7 +42,7 @@ module.exports = {
                         await newMember.send(
                             `🎉 Congratulations! You've been awarded **${pointReward.toLocaleString()}** points for receiving the Arcane role!`
                         );
-                    } catch (dmError) {
+                    } catch (_dmError) {
                         console.log(`Couldn't send Arcane reward DM to ${newMember.user.tag}`);
                     }
 

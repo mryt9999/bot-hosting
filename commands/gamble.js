@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, MessageFlags, time } = require('discord.js');
-const profileModel = require("../models/profileSchema");
-const balanceChangeEvent = require("../events/balanceChange");
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const profileModel = require('../models/profileSchema');
+const balanceChangeEvent = require('../events/balanceChange');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -38,7 +38,7 @@ module.exports = {
                         serverID: interaction.guild?.id ?? null,
                     });
                 }
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to fetch/create profileData for gamble:', err);
             }
         }
@@ -55,23 +55,23 @@ module.exports = {
 
             try {
                 if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: "You do not have enough points to make this gamble.", ...insuffFlags });
+                    await interaction.reply({ content: 'You do not have enough points to make this gamble.', ...insuffFlags });
                 } else if (interaction.deferred) {
-                    await interaction.editReply("You do not have enough points to make this gamble.");
+                    await interaction.editReply('You do not have enough points to make this gamble.');
                 } else {
-                    await interaction.followUp({ content: "You do not have enough points to make this gamble.", ...insuffFlags });
+                    await interaction.followUp({ content: 'You do not have enough points to make this gamble.', ...insuffFlags });
                 }
                 // Auto-delete the reply after 30 seconds if ephemeral
                 if (ephemeral) {
                     setTimeout(async () => {
                         try {
                             await interaction.deleteReply();
-                        } catch (err) {
+                        } catch (_err) {
                             // ignore
                         }
                     }, 30000);
                 }
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to notify insufficient funds:', err);
             }
             return;
@@ -82,7 +82,7 @@ module.exports = {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply(deferOpts);
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to defer gamble reply:', err);
         }
 
@@ -97,7 +97,7 @@ module.exports = {
                 let targetMember;
                 try {
                     targetMember = await interaction.guild.members.fetch(interaction.user.id);
-                } catch (err) {
+                } catch (_err) {
                     console.error('Failed to fetch target member for balance change event:', err);
                 }
                 // FIRE BALANCE CHANGE EVENT
@@ -112,7 +112,7 @@ module.exports = {
                     setTimeout(async () => {
                         try {
                             await interaction.deleteReply();
-                        } catch (err) {
+                        } catch (_err) {
                             // ignore
                         }
                     }, 30000);
@@ -125,7 +125,7 @@ module.exports = {
                 let targetMember;
                 try {
                     targetMember = await interaction.guild.members.fetch(interaction.user.id);
-                } catch (err) {
+                } catch (_err) {
                     console.error('Failed to fetch target member for balance change event:', err);
                 }
                 // FIRE BALANCE CHANGE EVENT
@@ -140,13 +140,13 @@ module.exports = {
                     setTimeout(async () => {
                         try {
                             await interaction.deleteReply();
-                        } catch (err) {
+                        } catch (_err) {
                             // ignore
                         }
                     }, 30000);
                 }
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed during gamble update/reply:', err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
@@ -170,12 +170,12 @@ module.exports = {
                     announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'gambling' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
                 }
 
-                if (!announceChannel) return;
+                if (!announceChannel) {return;}
 
                 msg = win ? `🎉 ${interaction.user} Won ${amount} points!` : `💔 ${interaction.user} lost ${amount} points.`;
 
                 await announceChannel.send({ content: msg, timestamp: Date.now() });
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to send GAMBLING announcement:', err);
             }
         })();

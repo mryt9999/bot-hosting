@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { EmbedBuilder } = require('@discordjs/builders');
-const profileModel = require("../models/profileSchema");
+const profileModel = require('../models/profileSchema');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,14 +13,14 @@ module.exports = {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.deferReply({ ephemeral: !!opts.ephemeral });
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to defer reply:', err);
         }
 
-        const { username, id } = interaction.user;
+        const { id } = interaction.user;
         const { balance } = profileData;
 
-        let leaderboardEmbed = new EmbedBuilder()
+        const leaderboardEmbed = new EmbedBuilder()
             .setTitle('🏆 Leaderboard 🏆')
             .setDescription('Top 10 players with highest points')
             .setColor(0xFFD700)
@@ -48,21 +48,21 @@ module.exports = {
 
         const topTen = members.slice(0, 10);
 
-        let desc = "";
+        let desc = '';
         for (let i = 0; i < topTen.length; i++) {
             try {
                 const memberObj = await interaction.guild.members.fetch(topTen[i].userId);
                 const userObj = memberObj?.user;
-                if (!userObj) continue;
+                if (!userObj) {continue;}
                 const userBalance = topTen[i].balance;
                 desc += `**#${i + 1}. ${userObj.username}**: ${userBalance} points\n`;
-            } catch (err) {
+            } catch (_err) {
                 // couldn't fetch this member, skip
                 continue;
             }
         }
 
-        if (desc !== "") {
+        if (desc !== '') {
             leaderboardEmbed.setDescription(desc);
         }
 
@@ -81,13 +81,13 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
             }
 
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to send leaderboard reply:', err);
             // best-effort fallback
             try {

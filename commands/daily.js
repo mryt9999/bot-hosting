@@ -1,8 +1,8 @@
-const { SlashCommandBuilder, time, MessageFlags } = require('discord.js');
-const parseMilliseconds = require("parse-ms-2");
-const profileModel = require("../models/profileSchema");
-const { dailyMin, dailyMax } = require("../globalValues.json");
-const balanceChangeEvent = require("../events/balanceChange");
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const parseMilliseconds = require('parse-ms-2');
+const profileModel = require('../models/profileSchema');
+const { dailyMin, dailyMax } = require('../globalValues.json');
+const balanceChangeEvent = require('../events/balanceChange');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -24,7 +24,7 @@ module.exports = {
                         serverID: interaction.guild?.id ?? null,
                     });
                 }
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to fetch/create profileData:', err);
             }
         }
@@ -39,8 +39,8 @@ module.exports = {
                 if (!interaction.deferred && !interaction.replied) {
                     await interaction.deferReply(deferOpts);
                 }
-            } catch (err) {
-                console.error('Failed to defer for cooldown message:', err);
+            } catch (_err) {
+                console.error('Failed to defer for cooldown message:', _err);
             }
 
             const { hours, minutes, seconds } = parseMilliseconds(timeLeft);
@@ -51,8 +51,8 @@ module.exports = {
                     await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
                 } else if (!interaction.replied) {
                     // not deferred and not replied -> reply now (use flags if needed)
-                    if (ephemeral) await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
-                    else await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+                    if (ephemeral) {await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });}
+                    else {await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });}
                 } else {
                     await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
                 }
@@ -61,13 +61,13 @@ module.exports = {
                     setTimeout(async () => {
                         try {
                             await interaction.deleteReply();
-                        } catch (err) {
+                        } catch (_err) {
                             // ignore
                         }
                     }, 30000);
                 }
-            } catch (err) {
-                console.error('Failed to send cooldown message:', err);
+            } catch (_err) {
+                console.error('Failed to send cooldown message:', _err);
             }
             return;
         }
@@ -77,7 +77,7 @@ module.exports = {
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.deferReply(deferOpts);
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to defer before awarding daily:', err);
         }
 
@@ -87,7 +87,7 @@ module.exports = {
             let targetMember;
             try {
                 targetMember = await interaction.guild.members.fetch(interaction.user.id);
-            } catch (err) {
+            } catch (_err) {
                 console.error('Failed to fetch target member for balance change event:', err);
             }
             await profileModel.findOneAndUpdate(
@@ -100,12 +100,12 @@ module.exports = {
             );
             // FIRE BALANCE CHANGE EVENT
             balanceChangeEvent.execute(targetMember);
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to update daily claim:', err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
-                    if (ephemeral) await interaction.reply({ content: 'Error claiming daily.', flags: MessageFlags.Ephemeral });
-                    else await interaction.reply({ content: 'Error claiming daily.' });
+                    if (ephemeral) {await interaction.reply({ content: 'Error claiming daily.', flags: MessageFlags.Ephemeral });}
+                    else {await interaction.reply({ content: 'Error claiming daily.' });}
                 } else if (interaction.deferred) {
                     await interaction.editReply('Error claiming daily.');
                 } else {
@@ -121,8 +121,8 @@ module.exports = {
             if (interaction.deferred) {
                 await interaction.editReply(successMsg);
             } else if (!interaction.replied) {
-                if (ephemeral) await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral });
-                else await interaction.reply({ content: successMsg });
+                if (ephemeral) {await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral });}
+                else {await interaction.reply({ content: successMsg });}
             } else {
                 await interaction.followUp({ content: successMsg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
             }
@@ -131,13 +131,13 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
             }
-        } catch (err) {
-            console.error('Failed to send daily success message:', err);
+        } catch (_err) {
+            console.error('Failed to send daily success message:', _err);
         }
     },
 };
