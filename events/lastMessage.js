@@ -2,12 +2,12 @@ const { Events } = require('discord.js');
 const { dailyRolePay } = require('../globalValues.json');
 
 // Map userId -> { channelId, timestamp }
-if (!global.userLastMessageChannel) global.userLastMessageChannel = new Map();
+if (!global.userLastMessageChannel) {global.userLastMessageChannel = new Map();}
 
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {
-        if (message.author.bot) return;
+        if (message.author.bot) {return;}
 
         // check all the roles in dailyRolePay and see if the user has any of them
         //check only if 24 hours have passed since lastDailyRolePay
@@ -19,7 +19,7 @@ module.exports = {
             if (now - lastPay >= 86400000) { // 24 hours
                 // list all of the roles
                 let totalPay = 0;
-                let rolesPaidFor = [];
+                const rolesPaidFor = [];
                 for (const rolePay of dailyRolePay) {
                     const roleId = rolePay.roleId;
                     const pointReward = rolePay.pointReward || 0;
