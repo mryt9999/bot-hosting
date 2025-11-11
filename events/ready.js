@@ -1,7 +1,7 @@
 const { Events } = require('discord.js');
-const profileModel = require('../models/profileSchema');
+const profileModel = require("../models/profileSchema");
 const mongoose = require('mongoose');
-const { rescheduleActiveLoans } = require('../commands/loan');
+const { roleRequirements } = require("../globalValues.json");
 
 module.exports = {
     name: Events.ClientReady,
@@ -11,18 +11,12 @@ module.exports = {
             // ensure application id is available for webhook deletes
             await client.application?.fetch();
             console.log(`Ready — application id: ${client.application?.id}`);
-        } catch (_err) {
-            console.warn('Could not fetch client.application on ready:', _err?.message ?? _err);
+        } catch (err) {
+            console.warn('Could not fetch client.application on ready:', err?.message ?? err);
         }
 
+        console.log(Math.random())
         console.log(`Ready! Logged in as ${client.user.tag}`);
-
-        // Reschedule active loans for enforcement
-        try {
-            await rescheduleActiveLoans(client);
-        } catch (error) {
-            console.error('Failed to reschedule active loans:', error);
-        }
 
         // Set up event handler for when members join
         client.on(Events.GuildMemberAdd, async (member) => {
@@ -40,7 +34,7 @@ module.exports = {
                     // Send welcome message with profile creation confirmation
                     try {
                         await member.send(`Welcome to ${member.guild.name}! Your economy profile has been created.`);
-                    } catch (_dmError) {
+                    } catch (dmError) {
                         console.log(`Couldn't send DM to ${member.user.tag}`);
                     }
 
@@ -56,9 +50,6 @@ module.exports = {
                 }
             }
         });
-
-        //whenever a member gets a new ArcaneRole give him arcanerolereward for that role
-
 
 
 

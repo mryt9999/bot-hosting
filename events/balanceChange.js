@@ -10,14 +10,14 @@ module.exports = {
         try {
             // Fetch the latest profile data
             const profileData = await profileModel.findOne({ userId: member.id });
-            if (!profileData) return; // No profile found
+            if (!profileData) { return; } // No profile found
             const userBalance = profileData.balance;
 
             // Determine the highest role the user qualifies for
             //loop trough each array inside roleRequirements
             let newRoleId = null;
             let lastReq = 0;
-            for (const [arrayIndex, array] of Object.entries(roleRequirements)) {
+            for (const [_arrayIndex, array] of Object.entries(roleRequirements)) {
                 if (userBalance >= array.pointRequirement) {
                     // Check if user already has a higher role
                     if (!newRoleId || array.pointRequirement > lastReq) {
