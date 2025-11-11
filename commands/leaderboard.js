@@ -7,7 +7,7 @@ module.exports = {
         .setName('leaderboard')
         .setDescription('Shows top 10 players with highest points'),
     async execute(interaction, profileData, opts = {}) {
-        ephemeral = !!opts.ephemeral;
+        const ephemeral = !!opts.ephemeral;
         // defer reply if not already deferred/replied (use ephemeral if requested)
         try {
             if (!interaction.replied && !interaction.deferred) {

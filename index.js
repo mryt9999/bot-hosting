@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 
 const { DISCORD_TOKEN: token, MONGODB_SRV: database } = process.env;
 
-// Require neccessary discord.js classes
+// Require necessary discord.js classes
 const { Client, Collection, GatewayIntentBits } = require("discord.js");
 
 // Create a new client instance

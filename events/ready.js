@@ -15,7 +15,6 @@ module.exports = {
             console.warn('Could not fetch client.application on ready:', err?.message ?? err);
         }
 
-        console.log(Math.random())
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         // Set up event handler for when members join
