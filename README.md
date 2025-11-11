@@ -6,7 +6,7 @@ A feature-rich Discord bot that provides an interactive economy system with poin
 
 ### Core Commands
 - **`/balance`** - Check your or another player's point balance
-- **`/daily`** - Claim your daily points (24-hour cooldown)
+- **`/daily`** - Claim your daily points (24-hour cooldown, requires sending at least one message)
 - **`/gamble <amount>`** - Gamble points with 50/50 odds
 - **`/donate <player> <amount>`** - Donate points to another player
 - **`/leaderboard`** - View the top 10 players
@@ -21,6 +21,7 @@ A feature-rich Discord bot that provides an interactive economy system with poin
 - **Role Rewards** - Automatically assigns roles based on point thresholds
 - **Balance Change Events** - Updates roles when player balances change
 - **Announcement System** - Posts public announcements for gambling and donations
+- **Message Tracking** - Tracks user messages to ensure engagement before daily claims
 
 ## Setup Instructions
 
@@ -111,7 +112,8 @@ bot-hosting/
     userId: String,      // Discord user ID (unique)
     serverID: String,    // Discord server ID
     balance: Number,     // User's point balance (default: 100)
-    lastDaily: Number    // Timestamp of last daily claim (default: 0)
+    lastDaily: Number,   // Timestamp of last daily claim (default: 0)
+    lastMessageTime: Number  // Timestamp of last message sent (default: 0)
 }
 ```
 

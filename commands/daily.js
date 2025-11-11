@@ -30,8 +30,49 @@ module.exports = {
         }
 
         const lastDaily = profileData?.lastDaily ?? 0;
+        const lastMessageTime = profileData?.lastMessageTime ?? 0;
         const cooldown = 86400000; // 24 hours
         const timeLeft = cooldown - (Date.now() - lastDaily);
+
+        // Check if user has sent a message since last daily claim
+        if (lastMessageTime < lastDaily) {
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.deferReply(deferOpts);
+                }
+            } catch (_err) {
+                console.error('Failed to defer for no message error:', _err);
+            }
+
+            const msg = 'You must send at least one message before claiming your daily pay!';
+
+            try {
+                if (interaction.deferred) {
+                    await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
+                } else if (!interaction.replied) {
+                    if (ephemeral) {
+                        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+                    } else {
+                        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+                    }
+                } else {
+                    await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+                }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (_err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
+            } catch (_err) {
+                console.error('Failed to send no message error:', _err);
+            }
+            return;
+        }
 
         // If still on cooldown, reply/edit reply (respect previous replies)
         if (timeLeft > 0) {
