@@ -1,6 +1,5 @@
 const profileModel = require('../models/profileSchema');
 const { roleRequirements } = require('../globalValues.json');
-const { autoRepayLoans } = require('../commands/loan');
 
 //only add the role if the user meets the requirements, and also if the user doesn't already have role with higher requirements
 // Event handler for when a user's balance changes
@@ -38,6 +37,8 @@ module.exports = {
                 await member.roles.add(newRoleId);
             }
 
+            // Import autoRepayLoans here to avoid circular dependency
+            const { autoRepayLoans } = require('../commands/loan');
             // Trigger auto-repayment for any active/overdue loans
             try {
                 await autoRepayLoans(member.id, member.client);
