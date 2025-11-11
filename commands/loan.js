@@ -314,8 +314,8 @@ async function handleRepay(interaction, profileData) {
         });
     }
 
-    // Check if loan is active
-    if (loan.status !== 'active') {
+    // Check if loan is active or overdue
+    if (loan.status !== 'active' && loan.status !== 'overdue') {
         return await interaction.reply({
             content: `This loan is ${loan.status} and cannot be repaid.`,
             flags: MessageFlags.Ephemeral
@@ -345,23 +345,19 @@ async function handleRepay(interaction, profileData) {
     }
 
     const borrowerBalance = profileData.balance;
-    const willGoNegative = borrowerBalance < amountToRepay;
 
-    // Transfer points (can go negative)
+    // Check if borrower has enough balance - don't allow negative
+    if (borrowerBalance < amountToRepay) {
+        return await interaction.reply({
+            content: `Insufficient funds. You have ${borrowerBalance.toLocaleString()} points but need ${amountToRepay.toLocaleString()} points to make this payment. Your future earnings will automatically go toward loan repayment.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    // Transfer points
     const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay);
 
-    // If insufficient funds, force the payment by going negative
-    if (!transferResult.success && transferResult.reason === 'insufficient_funds') {
-        // Manually update balances to allow negative
-        await profileModel.findOneAndUpdate(
-            { userId: loan.borrowerId },
-            { $inc: { balance: -amountToRepay } }
-        );
-        await profileModel.findOneAndUpdate(
-            { userId: loan.lenderId },
-            { $inc: { balance: amountToRepay } }
-        );
-    } else if (!transferResult.success) {
+    if (!transferResult.success) {
         return await interaction.reply({
             content: 'Failed to process the repayment. Please try again later.',
             flags: MessageFlags.Ephemeral
@@ -398,18 +394,8 @@ async function handleRepay(interaction, profileData) {
             { name: 'Amount Paid', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
             { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} points`, inline: true },
             { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true }
-        );
-
-    if (willGoNegative) {
-        const newBalance = borrowerBalance - amountToRepay;
-        embed.addFields({
-            name: '⚠️ Warning',
-            value: `Your balance is now ${newBalance.toLocaleString()} points (negative).`,
-            inline: false
-        });
-    }
-
-    embed.setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Keep making payments to avoid default' })
+        )
+        .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
         .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
@@ -438,15 +424,15 @@ async function handleRepay(interaction, profileData) {
 async function handleList(interaction) {
     const userId = interaction.user.id;
 
-    // Find all active loans where user is either lender or borrower
+    // Find all active and overdue loans where user is either lender or borrower
     const loansAsLender = await loanModel.find({
         lenderId: userId,
-        status: 'active'
+        status: { $in: ['active', 'overdue'] }
     });
 
     const loansAsBorrower = await loanModel.find({
         borrowerId: userId,
-        status: 'active'
+        status: { $in: ['active', 'overdue'] }
     });
 
     const embed = new EmbedBuilder()
@@ -461,7 +447,8 @@ async function handleList(interaction) {
             const lenderText = loansAsLender.map(loan => {
                 const dueDate = `<t:${Math.floor(loan.dueAt / 1000)}:R>`;
                 const remaining = loan.paybackAmount - loan.amountPaid;
-                return `**ID:** \`${loan._id}\`\n**Borrower:** <@${loan.borrowerId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}\n`;
+                const overdueTag = loan.status === 'overdue' ? ' ⚠️ **OVERDUE**' : '';
+                return `**ID:** \`${loan._id}\`\n**Borrower:** <@${loan.borrowerId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}${overdueTag}\n`;
             }).join('\n');
             embed.addFields({ name: '💸 Loans You Gave', value: lenderText });
         }
@@ -470,7 +457,8 @@ async function handleList(interaction) {
             const borrowerText = loansAsBorrower.map(loan => {
                 const dueDate = `<t:${Math.floor(loan.dueAt / 1000)}:R>`;
                 const remaining = loan.paybackAmount - loan.amountPaid;
-                return `**ID:** \`${loan._id}\`\n**Lender:** <@${loan.lenderId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}\n`;
+                const overdueTag = loan.status === 'overdue' ? ' ⚠️ **OVERDUE**' : '';
+                return `**ID:** \`${loan._id}\`\n**Lender:** <@${loan.lenderId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}${overdueTag}\n`;
             }).join('\n');
             embed.addFields({ name: '💳 Loans You Owe', value: borrowerText });
         }
@@ -534,77 +522,51 @@ async function enforceLoan(loanId, client) {
 
         const remainingAmount = loan.paybackAmount - loan.amountPaid;
 
-        // Get borrower's current balance
-        const borrowerProfile = await profileModel.findOne({ userId: loan.borrowerId });
-        const borrowerBalance = borrowerProfile?.balance || 0;
-
-        // Force payment (can go negative)
-        await profileModel.findOneAndUpdate(
-            { userId: loan.borrowerId },
-            { $inc: { balance: -remainingAmount } }
-        );
-
-        await profileModel.findOneAndUpdate(
-            { userId: loan.lenderId },
-            { $inc: { balance: remainingAmount } }
-        );
-
-        // Update loan status
+        // Mark loan as overdue instead of forcing payment
         await loanModel.findByIdAndUpdate(loanId, {
-            status: 'paid',
-            amountPaid: loan.paybackAmount
+            status: 'overdue'
         });
-
-        const wentNegative = borrowerBalance < remainingAmount;
-        const finalBalance = borrowerBalance - remainingAmount;
 
         // Notify borrower
         try {
             const borrower = await client.users.fetch(loan.borrowerId);
             const borrowerEmbed = new EmbedBuilder()
-                .setTitle('⚠️ Loan Due - Payment Enforced')
+                .setTitle('⚠️ Loan Overdue')
                 .setColor(0xE74C3C)
-                .setDescription(`Your loan from <@${loan.lenderId}> was due and payment has been automatically enforced.`)
+                .setDescription(`Your loan from <@${loan.lenderId}> is now overdue.`)
                 .addFields(
-                    { name: 'Amount Paid', value: `🪙 ${remainingAmount.toLocaleString()} points`, inline: false },
-                    { name: 'New Balance', value: `�� ${finalBalance.toLocaleString()} points`, inline: true }
-                );
+                    { name: 'Amount Remaining', value: `🪙 ${remainingAmount.toLocaleString()} points`, inline: false },
+                    { name: 'Auto-Repayment', value: 'All future points you earn will automatically go toward repaying this loan until it is fully paid.', inline: false }
+                )
+                .setTimestamp();
 
-            if (wentNegative) {
-                borrowerEmbed.addFields({
-                    name: '⚠️ Negative Balance',
-                    value: 'You did not have enough points and your balance has gone negative.',
-                    inline: false
-                });
-            }
-
-            borrowerEmbed.setTimestamp();
             await borrower.send({ embeds: [borrowerEmbed] });
         } catch (error) {
-            console.error('Failed to notify borrower of enforcement:', error);
+            console.error('Failed to notify borrower of overdue loan:', error);
         }
 
         // Notify lender
         try {
             const lender = await client.users.fetch(loan.lenderId);
             const lenderEmbed = new EmbedBuilder()
-                .setTitle('✅ Loan Repaid (Enforced)')
-                .setColor(0x2ECC71)
-                .setDescription(`<@${loan.borrowerId}>'s loan has been automatically repaid (loan was due).`)
+                .setTitle('⚠️ Loan Overdue')
+                .setColor(0xE74C3C)
+                .setDescription(`<@${loan.borrowerId}>'s loan is now overdue.`)
                 .addFields(
-                    { name: 'Amount Received', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: false },
-                    { name: 'Profit', value: `🪙 ${(loan.paybackAmount - loan.loanAmount).toLocaleString()} points`, inline: true }
+                    { name: 'Amount Remaining', value: `🪙 ${remainingAmount.toLocaleString()} points`, inline: false },
+                    { name: 'Auto-Repayment', value: 'The borrower\'s future earnings will automatically go toward repaying this loan.', inline: false }
                 )
                 .setTimestamp();
 
             await lender.send({ embeds: [lenderEmbed] });
         } catch (error) {
-            console.error('Failed to notify lender of enforcement:', error);
+            console.error('Failed to notify lender of overdue loan:', error);
         }
     } catch (error) {
-        console.error('Failed to enforce loan:', error);
+        console.error('Failed to mark loan as overdue:', error);
     }
 }
+
 
 // On bot startup, reschedule all active loans that are still pending enforcement
 async function rescheduleActiveLoans(client) {
@@ -623,5 +585,104 @@ async function rescheduleActiveLoans(client) {
     }
 }
 
-// Export the reschedule function so it can be called on bot ready
+// Auto-repayment function - called when borrower's balance increases
+async function autoRepayLoans(userId, client) {
+    try {
+        // Find all active or overdue loans for this borrower
+        const loans = await loanModel.find({
+            borrowerId: userId,
+            status: { $in: ['active', 'overdue'] }
+        }).sort({ dueAt: 1 }); // Prioritize loans that are due soonest
+
+        if (loans.length === 0) {
+            return; // No active loans
+        }
+
+        // Get current balance
+        const profile = await profileModel.findOne({ userId });
+        let availableBalance = profile?.balance || 0;
+
+        if (availableBalance <= 0) {
+            return; // No balance to use for repayment
+        }
+
+        // Process each loan
+        for (const loan of loans) {
+            if (availableBalance <= 0) {
+                break; // No more balance available
+            }
+
+            const remainingAmount = loan.paybackAmount - loan.amountPaid;
+            const amountToRepay = Math.min(availableBalance, remainingAmount);
+
+            // Transfer points
+            const transferResult = await transferPoints(userId, loan.lenderId, amountToRepay);
+
+            if (transferResult.success) {
+                availableBalance -= amountToRepay;
+                const newAmountPaid = loan.amountPaid + amountToRepay;
+                const isFullyPaid = newAmountPaid >= loan.paybackAmount;
+
+                // Update loan
+                await loanModel.findByIdAndUpdate(loan._id, {
+                    amountPaid: newAmountPaid,
+                    status: isFullyPaid ? 'paid' : loan.status
+                });
+
+                // Notify borrower
+                try {
+                    const borrower = await client.users.fetch(userId);
+                    const embed = new EmbedBuilder()
+                        .setTitle(isFullyPaid ? '✅ Loan Auto-Repaid (Completed)' : '💵 Auto-Payment Made')
+                        .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
+                        .setDescription(isFullyPaid
+                            ? `Your loan to <@${loan.lenderId}> has been fully repaid automatically!`
+                            : `Automatic payment of 🪙 ${amountToRepay.toLocaleString()} points made toward your loan to <@${loan.lenderId}>.`)
+                        .addFields(
+                            { name: 'Amount Paid', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
+                            { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}`, inline: true }
+                        );
+
+                    if (!isFullyPaid) {
+                        embed.addFields({
+                            name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true
+                        });
+                    }
+
+                    embed.setFooter({ text: 'Future earnings will continue to auto-repay until loan is fully paid' })
+                        .setTimestamp();
+
+                    await borrower.send({ embeds: [embed] });
+                } catch (error) {
+                    console.error('Failed to notify borrower of auto-repayment:', error);
+                }
+
+                // Notify lender if fully paid
+                if (isFullyPaid) {
+                    try {
+                        const lender = await client.users.fetch(loan.lenderId);
+                        const lenderEmbed = new EmbedBuilder()
+                            .setTitle('✅ Loan Fully Repaid (Auto-Payment)')
+                            .setColor(0x2ECC71)
+                            .setDescription(`<@${userId}> has fully repaid their loan through automatic payments!`)
+                            .addFields(
+                                { name: 'Total Received', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: false },
+                                { name: 'Profit', value: `🪙 ${(loan.paybackAmount - loan.loanAmount).toLocaleString()} points`, inline: true }
+                            )
+                            .setTimestamp();
+
+                        await lender.send({ embeds: [lenderEmbed] });
+                    } catch (error) {
+                        console.error('Failed to notify lender of auto-repayment:', error);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Failed to process auto-repayment:', error);
+    }
+}
+
+// Export the reschedule and auto-repayment functions
 module.exports.rescheduleActiveLoans = rescheduleActiveLoans;
+module.exports.autoRepayLoans = autoRepayLoans;
