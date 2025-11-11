@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 const balanceChangeEvent = require("../events/balanceChange");
+const { transferPoints, ensureProfile } = require('../utils/dbUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -93,48 +94,66 @@ module.exports = {
             return;
         }
 
-        // Ensure recipient profile exists
-        let targetProfile;
+        // perform the transfer using atomic transaction
+        let transferResult;
         try {
-            targetProfile = await profileModel.findOne({ userId: targetId });
-            if (!targetProfile) {
-                targetProfile = await profileModel.create({ userId: targetId, serverID: interaction.guild?.id ?? null });
-            }
+            transferResult = await transferPoints(senderId, targetId, amount);
         } catch (err) {
-            console.error('Failed to load/create target profile:', err);
-            const msg = 'Could not find or create recipient profile.';
-            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
-            if (interaction.deferred) return interaction.editReply({ content: msg });
-            return interaction.followUp({ content: msg, ...flags });
-        }
-
-        // perform the transfer
-        try {
-            // update sender and recipient (not atomic but acceptable for most bots)
-            await profileModel.findOneAndUpdate({ userId: senderId }, { $inc: { balance: -amount } });
-            await profileModel.findOneAndUpdate({ userId: targetId }, { $inc: { balance: amount } });
-            // FIRE BALANCE CHANGE EVENTS
-            let senderMember;
-            try {
-                senderMember = await interaction.guild.members.fetch(senderId);
-            } catch (err) {
-                console.error('Failed to fetch sender member for balance change event:', err);
-            }
-            let targetMember;
-            try {
-                targetMember = await interaction.guild.members.fetch(targetId);
-            } catch (err) {
-                console.error('Failed to fetch target member for balance change event:', err);
-            }
-            balanceChangeEvent.execute(senderMember);
-            balanceChangeEvent.execute(targetMember);
-        } catch (err) {
-            console.error('Failed to update balances for donate:', err);
+            console.error('Failed to execute transferPoints:', err);
             const msg = 'Failed to complete the donation. Please try again later.';
             if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
             if (interaction.deferred) return interaction.editReply({ content: msg });
             return interaction.followUp({ content: msg, ...flags });
         }
+
+        // Handle transfer result
+        if (!transferResult.success) {
+            if (transferResult.reason === 'insufficient_funds') {
+                // This shouldn't happen given the check above, but handle it anyway
+                const msg = `Insufficient funds. You have ${senderBalance.toLocaleString()} points.`;
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+                } else if (interaction.deferred) {
+                    await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
+                } else {
+                    await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+                }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
+                return;
+            } else {
+                // Other errors (invalid_amount, db_error)
+                console.error('Transfer failed:', transferResult.reason, transferResult.error);
+                const msg = 'Failed to complete the donation. Please try again later.';
+                if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
+                if (interaction.deferred) return interaction.editReply({ content: msg });
+                return interaction.followUp({ content: msg, ...flags });
+            }
+        }
+
+        // Transfer successful - fire balance change events
+        let senderMember;
+        try {
+            senderMember = await interaction.guild.members.fetch(senderId);
+        } catch (err) {
+            console.error('Failed to fetch sender member for balance change event:', err);
+        }
+        let targetMember;
+        try {
+            targetMember = await interaction.guild.members.fetch(targetId);
+        } catch (err) {
+            console.error('Failed to fetch target member for balance change event:', err);
+        }
+        balanceChangeEvent.execute(senderMember);
+        balanceChangeEvent.execute(targetMember);
 
         // Build success embed
         const senderName = interaction.user.username;
