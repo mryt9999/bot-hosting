@@ -1,6 +1,12 @@
 {
     "dailyMin": 1000,
     "dailyMax": 2000,
+    "dailyRolePay": [
+        {
+            "roleId": "1437830285319344168",
+            "pointReward": 2000
+        }
+    ],
     "roleRequirements": [
         {
             "roleId": "1437171794518737088",
