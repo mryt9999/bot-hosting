@@ -12,7 +12,7 @@ const mongoose = require('mongoose');
  * @property {number} createdAt - Timestamp when loan contract was created
  * @property {number} acceptedAt - Timestamp when loan was accepted (0 if pending)
  * @property {number} dueAt - Timestamp when loan is due (0 if not accepted yet)
- * @property {string} status - Status of the loan: 'pending', 'active', 'paid', 'defaulted'
+ * @property {string} status - Status of the loan: 'pending', 'active', 'overdue', 'paid', 'defaulted'
  * @property {number} amountPaid - Amount already paid back (for partial payments)
  */
 const loanSchema = new mongoose.Schema({
@@ -25,7 +25,7 @@ const loanSchema = new mongoose.Schema({
     createdAt: { type: Number, default: Date.now },
     acceptedAt: { type: Number, default: 0 },
     dueAt: { type: Number, default: 0 },
-    status: { type: String, enum: ['pending', 'active', 'paid', 'defaulted'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'active', 'overdue', 'paid', 'defaulted'], default: 'pending' },
     amountPaid: { type: Number, default: 0 },
 });
 
