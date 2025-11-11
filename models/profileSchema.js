@@ -7,6 +7,9 @@ const mongoose = require('mongoose');
  * @property {string} serverID - Discord server/guild ID
  * @property {number} balance - User's current point balance (default: 100)
  * @property {number} lastDaily - Timestamp of last daily claim in milliseconds (default: 0)
+ * @property {number} lastDailyRolePay - Timestamp of last daily role pay in milliseconds (default: 0)
+ * @property {Array<Object>} loans - Array of loan objects where the user is a creditor
+ * @property {Array<Object>} loansOwed - Array of loan objects where the user is a debtor
  */
 const profileSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -14,6 +17,16 @@ const profileSchema = new mongoose.Schema({
     balance: { type: Number, default: 100 },
     lastDaily: { type: Number, default: 0 },
     lastDailyRolePay: { type: Number, default: 0 },
+    loans: [{
+        debtorId: { type: String, required: true },
+        amount: { type: Number, required: true },
+        amountPaid: { type: Number, default: 0 },
+    }],
+    loansOwed: [{
+        creditorId: { type: String, required: true },
+        amount: { type: Number, required: true },
+        amountPaid: { type: Number, default: 0 },
+    }],
 });
 
 const model = mongoose.model('economydb', profileSchema);
