@@ -1,5 +1,6 @@
 const profileModel = require('../models/profileSchema');
 const { roleRequirements } = require('../globalValues.json');
+const { autoRepayLoans } = require('../commands/loan');
 
 //only add the role if the user meets the requirements, and also if the user doesn't already have role with higher requirements
 // Event handler for when a user's balance changes
@@ -35,6 +36,13 @@ module.exports = {
             // Add the new role if applicable
             if (newRoleId && !member.roles.cache.has(newRoleId)) {
                 await member.roles.add(newRoleId);
+            }
+
+            // Trigger auto-repayment for any active/overdue loans
+            try {
+                await autoRepayLoans(member.id, member.client);
+            } catch (error) {
+                console.error(`Error processing auto-repayment for userId: ${member.id}`, error);
             }
         } catch (error) {
             console.error(`Error processing balance change for userId: ${member.id}`, error);

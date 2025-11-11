@@ -35,7 +35,7 @@ module.exports = {
 
                 // ArcaneRoleRewards is an array of { roleId, pointReward }
                 const arcaneReward = ArcaneRoleRewards.find(reward => reward.roleId === role.id);
-                if (!arcaneReward) continue;
+                if (!arcaneReward) {continue;}
 
                 const pointReward = arcaneReward.pointReward || 0;
                 console.log(`Awarding ${pointReward} points for role ${role.id} to ${newMember.id}`);

@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const mongoose = require('mongoose');
+const { rescheduleActiveLoans } = require('../commands/loan');
 
 module.exports = {
     name: Events.ClientReady,
@@ -15,6 +16,13 @@ module.exports = {
         }
 
         console.log(`Ready! Logged in as ${client.user.tag}`);
+
+        // Reschedule active loans for enforcement
+        try {
+            await rescheduleActiveLoans(client);
+        } catch (error) {
+            console.error('Failed to reschedule active loans:', error);
+        }
 
         // Set up event handler for when members join
         client.on(Events.GuildMemberAdd, async (member) => {
