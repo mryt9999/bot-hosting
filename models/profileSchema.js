@@ -13,6 +13,7 @@ const profileSchema = new mongoose.Schema({
     serverID: { type: String, required: true },
     balance: { type: Number, default: 100 },
     lastDaily: { type: Number, default: 0 },
+    lastDailyRolePay: { type: Number, default: 0 },
 });
 
 const model = mongoose.model('economydb', profileSchema);

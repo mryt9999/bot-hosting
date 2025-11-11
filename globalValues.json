@@ -4,7 +4,31 @@
     "dailyRolePay": [
         {
             "roleId": "1437830285319344168",
+            "pointReward": 3000
+        },
+        {
+            "roleId": "1437171794518737088",
+            "pointReward": 500
+        },
+        {
+            "roleId": "1437450680263770205",
+            "pointReward": 1000
+        },
+        {
+            "roleId": "1437174051910062213",
             "pointReward": 2000
+        },
+        {
+            "roleId": "1437173475285532755",
+            "pointReward": 4000
+        },
+        {
+            "roleId": "1437174630929662072",
+            "pointReward": 6000
+        },
+        {
+            "roleId": "1437172924313370696",
+            "pointReward": 10000
         }
     ],
     "roleRequirements": [
