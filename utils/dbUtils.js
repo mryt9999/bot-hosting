@@ -6,11 +6,12 @@ const profileModel = require('../models/profileSchema');
 /**
  * Ensure profile exists for a user (create if missing).
  */
-async function ensureProfile(userId, serverID = null, session = null) {
+async function ensureProfile(userId, serverId = null, session = null) {
+    const opts = session ? { session, upsert: true, new: true, setDefaultsOnInsert: true } : {};
     // upsert pattern: try findOne, then create if missing
     let profile = await profileModel.findOne({ userId }).session(session || null);
     if (!profile) {
-        profile = await profileModel.create([{ userId, serverID }], { session }).then(arr => arr[0]);
+        profile = await profileModel.create([{ userId, serverId }], { session }).then(arr => arr[0]);
     }
     return profile;
 }
@@ -40,7 +41,7 @@ async function transferPoints(senderId, receiverId, amount) {
         // ensure receiver exists and increment
         const receiver = await profileModel.findOneAndUpdate(
             { userId: receiverId },
-            { $inc: { balance: amount }, $setOnInsert: { serverID: null } },
+            { $inc: { balance: amount }, $setOnInsert: { serverId: null } },
             { new: true, upsert: true, session }
         );
 
@@ -65,7 +66,7 @@ async function transferPoints(senderId, receiverId, amount) {
 
             const fallbackReceiver = await profileModel.findOneAndUpdate(
                 { userId: receiverId },
-                { $inc: { balance: amount }, $setOnInsert: { serverID: null } },
+                { $inc: { balance: amount }, $setOnInsert: { serverId: null } },
                 { new: true, upsert: true }
             );
 

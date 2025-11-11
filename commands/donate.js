@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 const balanceChangeEvent = require("../events/balanceChange");
-const { transferPoints } = require("../utils/dbUtils");
+const { transferPoints, ensureProfile } = require('../utils/dbUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -94,41 +94,52 @@ module.exports = {
             return;
         }
 
-        // perform the transfer using atomic helper
-        const transferResult = await transferPoints(senderId, targetId, amount);
-        
-        if (!transferResult.success) {
-            let msg;
-            if (transferResult.reason === 'insufficient_funds') {
-                msg = `Insufficient funds. You have ${senderBalance.toLocaleString()} points.`;
-            } else if (transferResult.reason === 'invalid_amount') {
-                msg = 'Invalid amount specified.';
-            } else {
-                console.error('Failed to update balances for donate:', transferResult.error);
-                msg = 'Failed to complete the donation. Please try again later.';
-            }
-            
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
-            } else if (interaction.deferred) {
-                await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
-            } else {
-                await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-            }
-            // Auto-delete the reply after 30 seconds if ephemeral
-            if (ephemeral) {
-                setTimeout(async () => {
-                    try {
-                        await interaction.deleteReply();
-                    } catch (err) {
-                        // ignore
-                    }
-                }, 30000);
-            }
-            return;
+        // perform the transfer using atomic transaction
+        let transferResult;
+        try {
+            transferResult = await transferPoints(senderId, targetId, amount);
+        } catch (err) {
+            console.error('Failed to execute transferPoints:', err);
+            const msg = 'Failed to complete the donation. Please try again later.';
+            if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
+            if (interaction.deferred) return interaction.editReply({ content: msg });
+            return interaction.followUp({ content: msg, ...flags });
         }
 
-        // FIRE BALANCE CHANGE EVENTS
+        // Handle transfer result
+        if (!transferResult.success) {
+            if (transferResult.reason === 'insufficient_funds') {
+                // This shouldn't happen given the check above, but handle it anyway
+                const msg = `Insufficient funds. You have ${senderBalance.toLocaleString()} points.`;
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+                } else if (interaction.deferred) {
+                    await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
+                } else {
+                    await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+                }
+                // Auto-delete the reply after 30 seconds if ephemeral
+                if (ephemeral) {
+                    setTimeout(async () => {
+                        try {
+                            await interaction.deleteReply();
+                        } catch (err) {
+                            // ignore
+                        }
+                    }, 30000);
+                }
+                return;
+            } else {
+                // Other errors (invalid_amount, db_error)
+                console.error('Transfer failed:', transferResult.reason, transferResult.error);
+                const msg = 'Failed to complete the donation. Please try again later.';
+                if (!interaction.replied && !interaction.deferred) return interaction.reply({ content: msg, ...flags });
+                if (interaction.deferred) return interaction.editReply({ content: msg });
+                return interaction.followUp({ content: msg, ...flags });
+            }
+        }
+
+        // Transfer successful - fire balance change events
         let senderMember;
         try {
             senderMember = await interaction.guild.members.fetch(senderId);
