@@ -2,55 +2,69 @@ const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const { ArcaneRoleRewards } = require('../globalValues.json');
 
-// Event handler for when a member receives an Arcane role
-// Awards points based on the role they received
+console.log('ArcaneRoleReward handler loaded');
+
 module.exports = {
     name: Events.GuildMemberUpdate,
     async execute(oldMember, newMember) {
-        try {
-            // Check which roles were added
-            const addedRoles = newMember.roles.cache.filter(
-                role => !oldMember.roles.cache.has(role.id)
-            );
+        console.log(`GuildMemberUpdate event triggered for userId: ${newMember?.id}`);
 
-            if (addedRoles.size === 0) {
-                return; // No new roles added
+        try {
+            // ensure we have fresh member objects (fallback fetch if needed)
+            if (!oldMember || !newMember) {
+                console.debug('Missing member object(s), attempting to fetch fresh member data');
+                try {
+                    newMember = await newMember.guild.members.fetch(newMember.id);
+                    oldMember = await newMember.guild.members.fetch(newMember.id); // best-effort
+                } catch (e) {
+                    console.error('Failed to fetch member data:', e);
+                }
             }
 
-            // Check if any of the added roles are Arcane roles
-            for (const [roleId] of addedRoles) {
-                const arcaneReward = ArcaneRoleRewards.find(
-                    reward => reward.roleId === roleId
+            // Debug sizes
+            console.debug('old roles:', oldMember?.roles?.cache?.size ?? 'n/a', 'new roles:', newMember?.roles?.cache?.size ?? 'n/a');
+
+            const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
+            if (!addedRoles || addedRoles.size === 0) {
+                console.debug('No added roles detected');
+                return;
+            }
+
+            for (const role of addedRoles.values()) {
+                console.log(`New role added: ${role.id} (${role.name}) to userId: ${newMember.id}`);
+
+                // ArcaneRoleRewards is an array of { roleId, pointReward }
+                const arcaneReward = ArcaneRoleRewards.find(reward => reward.roleId === role.id);
+                if (!arcaneReward) continue;
+
+                const pointReward = arcaneReward.pointReward || 0;
+                console.log(`Awarding ${pointReward} points for role ${role.id} to ${newMember.id}`);
+
+                await profileModel.findOneAndUpdate(
+                    { userId: newMember.id },
+                    { $inc: { balance: pointReward }, $setOnInsert: { serverID: newMember.guild.id } },
+                    { upsert: true, new: true }
                 );
 
-                if (arcaneReward) {
-                    // Found an Arcane role - award points
-                    const pointReward = arcaneReward.pointReward;
-
-                    // Update the user's profile with the reward
-                    await profileModel.findOneAndUpdate(
-                        { userId: newMember.id },
-                        {
-                            $inc: { balance: pointReward },
-                            $setOnInsert: { serverID: newMember.guild.id }
-                        },
-                        { upsert: true, new: true }
-                    );
-
-                    // Send a DM to the user about their reward
+                //send a reply to the user inside the channel where he sent his last message
+                //dont send a dm
+                const lastMsg = global.userLastMessageChannel?.get(newMember.id);
+                if (lastMsg) {
                     try {
-                        await newMember.send(
-                            `🎉 Congratulations! You've been awarded **${pointReward.toLocaleString()}** points for receiving the Arcane role!`
-                        );
-                    } catch (_dmError) {
-                        console.log(`Couldn't send Arcane reward DM to ${newMember.user.tag}`);
+                        const channel = await newMember.guild.channels.fetch(lastMsg.channelId);
+                        if (channel?.isTextBased?.()) {
+                            await channel.send(`🎉 Congratulations <@${newMember.id}>! You received ${pointReward} points from arcane level.`);
+                        }
+                    } catch (err) {
+                        console.error(`Could not send message to channel ${lastMsg.channelId}:`, err);
                     }
-
-                    console.log(`Awarded ${pointReward} points to ${newMember.user.tag} for Arcane role ${roleId}`);
+                } else {
+                    // fallback to DM
+                    await newMember.send(`🎉 You received ${pointReward} points!`).catch(console.error);
                 }
             }
         } catch (error) {
-            console.error(`Error processing Arcane role reward for ${newMember.user.tag}:`, error);
+            console.error(`Error processing Arcane role reward for ${newMember?.user?.tag ?? newMember?.id}:`, error);
         }
     }
 };

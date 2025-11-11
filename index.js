@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const { DISCORD_TOKEN: token, MONGODB_SRV: database } = process.env;
 
 // Require necessary discord.js classes
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 
 // Create a new client instance
 const client = new Client({
@@ -16,7 +16,8 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
-    ]
+    ],
+    partials: [Partials.GuildMember]
 });
 
 

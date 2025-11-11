@@ -38,7 +38,16 @@ module.exports = {
                         .setName('amount')
                         .setDescription('The amount of points to subtract')
                         .setRequired(true)
-                        .setMinValue(1))),
+                        .setMinValue(1)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('resetpoints')
+                .setDescription('Reset a player\'s points')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to reset points for')
+                        .setRequired(true))),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -97,5 +106,20 @@ module.exports = {
             await interaction.editReply(`Successfully subtracted ${amount} points from ${receiver.username}'s balance.`);
         }
 
+        if (adminSubcommand === 'resetpoints') {
+            const receiver = interaction.options.getUser('player');
+            await profileModel.findOneAndUpdate(
+                {
+                    userId: receiver.id
+                },
+                {
+                    $set: {
+                        balance: 0
+                    }
+                }
+            );
+
+            await interaction.editReply(`Successfully reset ${receiver.username}'s points.`);
+        }
     },
 };
