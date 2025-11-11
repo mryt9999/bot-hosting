@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const profileModel = require("../models/profileSchema");
+const profileModel = require('../models/profileSchema');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -29,7 +29,7 @@ module.exports = {
                 let targetProfileData;
                 try {
                     targetProfileData = await profileModel.findOne({ userId: targetUser.id });
-                } catch (err) {
+                } catch (_err) {
                     console.error('Failed to fetch target profileData:', err);
                 }
                 //return if no profile data
@@ -49,7 +49,7 @@ module.exports = {
                 username = interaction.user.username;
                 avatar = interaction.user.displayAvatarURL({ dynamic: true });
             }
-        } catch (err) {
+        } catch (_err) {
             balance = profileData.balance;
             username = interaction.user.username;
             avatar = interaction.user.displayAvatarURL({ dynamic: true });
@@ -76,12 +76,12 @@ module.exports = {
                 setTimeout(async () => {
                     try {
                         await interaction.deleteReply();
-                    } catch (err) {
+                    } catch (_err) {
                         // ignore
                     }
                 }, 30000);
             }
-        } catch (err) {
+        } catch (_err) {
             console.error('Failed to send balance embed:', err);
             try {
                 if (!interaction.replied && !interaction.deferred) {

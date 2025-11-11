@@ -1,12 +1,12 @@
-require("dotenv").config();
-const fs = require("node:fs");
-const path = require("node:path");
-const mongoose = require("mongoose");
+require('dotenv').config();
+const fs = require('node:fs');
+const path = require('node:path');
+const mongoose = require('mongoose');
 
 const { DISCORD_TOKEN: token, MONGODB_SRV: database } = process.env;
 
-// Require neccessary discord.js classes
-const { Client, Collection, GatewayIntentBits } = require("discord.js");
+// Require necessary discord.js classes
+const { Client, Collection, GatewayIntentBits } = require('discord.js');
 
 // Create a new client instance
 const client = new Client({
@@ -21,10 +21,10 @@ const client = new Client({
 
 
 // Load the event files on startup
-const eventsPath = path.join(__dirname, "events");
+const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs
     .readdirSync(eventsPath)
-    .filter((file) => file.endsWith(".js"));
+    .filter((file) => file.endsWith('.js'));
 
 for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
@@ -38,15 +38,15 @@ for (const file of eventFiles) {
 
 //load the command files on startup
 client.commands = new Collection();
-const commandsPath = path.join(__dirname, "commands");
+const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs
     .readdirSync(commandsPath)
-    .filter((file) => file.endsWith(".js"));
+    .filter((file) => file.endsWith('.js'));
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     const command = require(filePath);
-    if ("data" in command && "execute" in command) {
+    if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
     } else {
         console.log(
@@ -57,9 +57,9 @@ for (const file of commandFiles) {
 
 // Connect to MongoDB
 mongoose.connect(database, {}).then(() => {
-    console.log("Connected to the database");
+    console.log('Connected to the database');
 }).catch((err) => {
-    console.log("Database connection error: ", err);
+    console.log('Database connection error: ', err);
 });
 // Log in to Discord with your client's token
 client.login(token);

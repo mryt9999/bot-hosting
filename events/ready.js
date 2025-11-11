@@ -1,7 +1,6 @@
 const { Events } = require('discord.js');
-const profileModel = require("../models/profileSchema");
+const profileModel = require('../models/profileSchema');
 const mongoose = require('mongoose');
-const { roleRequirements, ArcaneRoleRewards } = require("../globalValues.json");
 
 module.exports = {
     name: Events.ClientReady,
@@ -11,11 +10,10 @@ module.exports = {
             // ensure application id is available for webhook deletes
             await client.application?.fetch();
             console.log(`Ready — application id: ${client.application?.id}`);
-        } catch (err) {
-            console.warn('Could not fetch client.application on ready:', err?.message ?? err);
+        } catch (_err) {
+            console.warn('Could not fetch client.application on ready:', _err?.message ?? _err);
         }
 
-        console.log(Math.random())
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         // Set up event handler for when members join
@@ -34,7 +32,7 @@ module.exports = {
                     // Send welcome message with profile creation confirmation
                     try {
                         await member.send(`Welcome to ${member.guild.name}! Your economy profile has been created.`);
-                    } catch (dmError) {
+                    } catch (_dmError) {
                         console.log(`Couldn't send DM to ${member.user.tag}`);
                     }
 
