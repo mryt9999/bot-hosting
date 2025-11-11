@@ -14,7 +14,7 @@ module.exports = {
             .setColor('#FF6B6B')
             .setThumbnail(interaction.client.user.displayAvatarURL())
             .addFields(
-                { name: '💰 Points', value: 'Collect points.', inline: true },
+                { name: '🪙 Points', value: 'Collect points.', inline: true },
                 { name: '🎲 Games', value: 'Gamble your points', inline: true },
                 { name: '📊 Stats', value: 'View your balance', inline: true }
             )

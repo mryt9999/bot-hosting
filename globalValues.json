@@ -26,5 +26,67 @@
             "roleId": "1437172924313370696",
             "pointRequirement": 1000000
         }
+    ],
+    "ArcaneRoleRewards": [
+        {
+            "roleId": "1437847861499924552",
+            "pointReward": 1000
+        },
+        {
+            "roleId": "1437848006501077032",
+            "pointReward": 3000
+        },
+        {
+            "roleId": "1437848075694641252",
+            "pointReward": 7000
+        },
+        {
+            "roleId": "1437848150604906577",
+            "pointReward": 10000
+        },
+        {
+            "roleId": "1437848238622507141",
+            "pointReward": 15000
+        },
+        {
+            "roleId": "1437848349003874334",
+            "pointReward": 20000
+        },
+        {
+            "roleId": "1437848402825187359",
+            "pointReward": 25000
+        },
+        {
+            "roleId": "1437848465387290854",
+            "pointReward": 30000
+        },
+        {
+            "roleId": "1437848508739879012",
+            "pointReward": 35000
+        },
+        {
+            "roleId": "1437848581783556096",
+            "pointReward": 50000
+        },
+        {
+            "roleId": "1437848677296378008",
+            "pointReward": 100000
+        },
+        {
+            "roleId": "1437849897767276654",
+            "pointReward": 200000
+        },
+        {
+            "roleId": "1437849941987823807",
+            "pointReward": 300000
+        },
+        {
+            "roleId": "1437849976121065584",
+            "pointReward": 500000
+        },
+        {
+            "roleId": "1437850008799019088",
+            "pointReward": 1000000
+        }
     ]
 }

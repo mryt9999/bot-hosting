@@ -1,7 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 const mongoose = require('mongoose');
-const { roleRequirements } = require("../globalValues.json");
+const { roleRequirements, ArcaneRoleRewards } = require("../globalValues.json");
 
 module.exports = {
     name: Events.ClientReady,
@@ -15,6 +15,7 @@ module.exports = {
             console.warn('Could not fetch client.application on ready:', err?.message ?? err);
         }
 
+        console.log(Math.random())
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         // Set up event handler for when members join
@@ -49,6 +50,10 @@ module.exports = {
                 }
             }
         });
+
+        //whenever a member gets a new ArcaneRole give him arcanerolereward for that role
+
+
 
 
         // Log any database connection issues

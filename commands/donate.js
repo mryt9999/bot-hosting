@@ -151,7 +151,7 @@ module.exports = {
             .addFields(
                 { name: 'From', value: `${senderName} (<@${senderId}>)`, inline: true },
                 { name: 'To', value: `${recipientUser.username} (<@${targetId}>)`, inline: true },
-                { name: 'Amount', value: `💰 ${amount.toLocaleString()} points`, inline: false }
+                { name: 'Amount', value: `🪙 ${amount.toLocaleString()} points`, inline: false }
             )
             .setFooter({ text: `Thank you for supporting other players!` })
             .setTimestamp();
@@ -209,7 +209,7 @@ module.exports = {
                     .addFields(
                         { name: 'Donor', value: `<@${senderId}>`, inline: true },
                         { name: 'Recipient', value: `<@${targetId}>`, inline: true },
-                        { name: 'Amount', value: `💰 ${amount.toLocaleString()} points`, inline: false }
+                        { name: 'Amount', value: `🪙 ${amount.toLocaleString()} points`, inline: false }
                     )
                     .setTimestamp();
 

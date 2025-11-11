@@ -1,6 +1,5 @@
 const { Events } = require('discord.js');
 const profileModel = require("../models/profileSchema");
-const mongoose = require('mongoose');
 const { roleRequirements } = require("../globalValues.json");
 
 //only add the role if the user meets the requirements, and also if the user doesn't already have role with higher requirements

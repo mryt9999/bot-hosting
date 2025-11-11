@@ -61,7 +61,7 @@ module.exports = {
             .setColor(0x57F287) // green tint
             .setThumbnail(avatar)
             .addFields(
-                { name: 'Balance', value: `💰 ${balance.toLocaleString()} points`, inline: true })
+                { name: 'Balance', value: `🪙 ${balance.toLocaleString()} points`, inline: true })
             .setFooter({ text: `Requested by ${interaction.user.username}` })
             .setTimestamp();
 
