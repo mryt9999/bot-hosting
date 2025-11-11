@@ -1,5 +1,7 @@
-const profileModel = require('../models/profileSchema');
-const { roleRequirements } = require('../globalValues.json');
+const { Events } = require('discord.js');
+const profileModel = require("../models/profileSchema");
+const mongoose = require('mongoose');
+const { roleRequirements } = require("../globalValues.json");
 
 //only add the role if the user meets the requirements, and also if the user doesn't already have role with higher requirements
 // Event handler for when a user's balance changes
@@ -9,14 +11,14 @@ module.exports = {
         try {
             // Fetch the latest profile data
             const profileData = await profileModel.findOne({ userId: member.id });
-            if (!profileData) {return;} // No profile found
+            if (!profileData) return; // No profile found
             const userBalance = profileData.balance;
 
             // Determine the highest role the user qualifies for
             //loop trough each array inside roleRequirements
             let newRoleId = null;
             let lastReq = 0;
-            for (const [_arrayIndex, array] of Object.entries(roleRequirements)) {
+            for (const [arrayIndex, array] of Object.entries(roleRequirements)) {
                 if (userBalance >= array.pointRequirement) {
                     // Check if user already has a higher role
                     if (!newRoleId || array.pointRequirement > lastReq) {

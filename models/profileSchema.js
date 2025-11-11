@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const loan = require('../commands/loan');
 
 /**
  * User profile schema for the economy system
@@ -9,10 +8,6 @@ const loan = require('../commands/loan');
  * @property {number} balance - User's current point balance (default: 100)
  * @property {number} lastDaily - Timestamp of last daily claim in milliseconds (default: 0)
  * @property {number} lastDailyRolePay - Timestamp of last daily role pay in milliseconds (default: 0)
- * @property {Array<Object>} loans - Array of loan objects where the user is a creditor
- * @property {Array<Object>} loansOwed - Array of loan objects where the user is a debtor
- * @property {Array<Object>} loanContractsSent - Array of loan contract objects sent by the user
- * @property {Array<Object>} loanContractsReceived - Array of loan contract objects received by the user
  */
 const profileSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -20,34 +15,6 @@ const profileSchema = new mongoose.Schema({
     balance: { type: Number, default: 100 },
     lastDaily: { type: Number, default: 0 },
     lastDailyRolePay: { type: Number, default: 0 },
-    loans: [{
-        debtorId: { type: String, required: true },
-        durationLeft: { type: Number, required: true }, // in hours
-        amount: { type: Number, required: true },
-        amountPaid: { type: Number, default: 0 },
-    }],
-    loansOwed: [{
-        creditorId: { type: String, required: true },
-        durationLeft: { type: Number, required: true }, // in hours
-        amount: { type: Number, required: true },
-        amountPaid: { type: Number, default: 0 },
-    }],
-    loanContractsSent: [{
-        contractId: { type: String, required: true },
-        creditorId: { type: String, required: true },
-        debtorId: { type: String, required: true },
-        amount: { type: Number, required: true },
-        amountToPay: { type: Number, required: true },
-        duration: { type: Number, required: true }, // in hours
-    }],
-    loanContractsReceived: [{
-        contractId: { type: String, required: true },
-        creditorId: { type: String, required: true },
-        debtorId: { type: String, required: true },
-        amount: { type: Number, required: true },
-        amountToPay: { type: Number, required: true },
-        duration: { type: Number, required: true }, // in hours
-    }],
 });
 
 const model = mongoose.model('economydb', profileSchema);
