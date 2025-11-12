@@ -588,10 +588,10 @@ async function rescheduleActiveLoans(client) {
 // Auto-repayment function - called when borrower's balance increases
 async function autoRepayLoans(userId, client) {
     try {
-        // Find all active or overdue loans for this borrower
+        // Find all overdue loans for this borrower
         const loans = await loanModel.find({
             borrowerId: userId,
-            status: { $in: ['active', 'overdue'] }
+            status: { $in: ['overdue'] }
         }).sort({ dueAt: 1 }); // Prioritize loans that are due soonest
 
         if (loans.length === 0) {

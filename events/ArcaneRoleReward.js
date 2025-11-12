@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const { ArcaneRoleRewards } = require('../globalValues.json');
+const balanceChangeEvent = require('../events/balanceChange');
 
 console.log('ArcaneRoleReward handler loaded');
 
@@ -35,7 +36,7 @@ module.exports = {
 
                 // ArcaneRoleRewards is an array of { roleId, pointReward }
                 const arcaneReward = ArcaneRoleRewards.find(reward => reward.roleId === role.id);
-                if (!arcaneReward) {continue;}
+                if (!arcaneReward) { continue; }
 
                 const pointReward = arcaneReward.pointReward || 0;
                 console.log(`Awarding ${pointReward} points for role ${role.id} to ${newMember.id}`);
@@ -45,6 +46,8 @@ module.exports = {
                     { $inc: { balance: pointReward }, $setOnInsert: { serverID: newMember.guild.id } },
                     { upsert: true, new: true }
                 );
+                // Trigger balanceChange event manually
+                await balanceChangeEvent.execute(newMember);
 
                 //send a reply to the user inside the channel where he sent his last message
                 //dont send a dm

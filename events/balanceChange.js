@@ -39,7 +39,7 @@ module.exports = {
 
             // Import autoRepayLoans here to avoid circular dependency
             const { autoRepayLoans } = require('../commands/loan');
-            // Trigger auto-repayment for any active/overdue loans
+            // Trigger auto-repayment for any overdue loans
             try {
                 await autoRepayLoans(member.id, member.client);
             } catch (error) {
