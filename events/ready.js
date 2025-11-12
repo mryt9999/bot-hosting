@@ -25,6 +25,13 @@ module.exports = {
             console.error('Failed to reschedule active loans:', error);
         }
 
+        // Start pending loan cleanup (runs immediately then every hour)
+        try {
+            startPendingLoanCleanup(client);
+        } catch (error) {
+            console.error('Failed to start pending loan cleanup:', error);
+        }
+
 
         // Set up event handler for when members join
         client.on(Events.GuildMemberAdd, async (member) => {

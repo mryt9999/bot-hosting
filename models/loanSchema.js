@@ -25,9 +25,29 @@ const loanSchema = new mongoose.Schema({
     createdAt: { type: Number, default: Date.now },
     acceptedAt: { type: Number, default: 0 },
     dueAt: { type: Number, default: 0 },
+    paidAt: { type: Date },
     status: { type: String, enum: ['pending', 'active', 'overdue', 'paid', 'defaulted'], default: 'pending' },
     amountPaid: { type: Number, default: 0 },
 });
+
+
+// Auto-delete paid loans 1 days after being marked as paid
+loanSchema.index(
+    { paidAt: 1 },
+    {
+        expireAfterSeconds: 86400, // 1 day
+        partialFilterExpression: { status: 'paid' }
+    }
+);
+
+// Auto-delete pending loans 12 hours after creation (using TTL index)
+//loanSchema.index(
+//   { createdAt: 1 },
+//   {
+//      expireAfterSeconds: 43200, // 12 hours
+//      partialFilterExpression: { status: 'pending' }
+//  }
+//);
 
 const model = mongoose.model('loandb', loanSchema);
 

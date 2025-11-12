@@ -4,6 +4,34 @@ const loanModel = require('../models/loanSchema');
 const balanceChangeEvent = require('../events/balanceChange');
 const { transferPoints } = require('../utils/dbUtils');
 
+// Helper function to send loan logs to the designated channel
+async function sendLoanLog(client, guildId, embed) {
+    try {
+        // Priority: env LOAN_LOGS_CHANNEL_ID -> channel named "loan-logs" -> channel named "logs"
+        const logChannelId = process.env.LOAN_LOGS_CHANNEL_ID;
+        let logChannel = null;
+
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) return;
+
+        if (logChannelId) {
+            logChannel = guild.channels.cache.get(logChannelId) ?? await guild.channels.fetch(logChannelId).catch(() => null);
+        }
+
+        if (!logChannel) {
+            logChannel = guild.channels.cache.find(ch =>
+                (ch.name === 'loan-logs' || ch.name === 'logs') && ch.isTextBased?.()
+            );
+        }
+
+        if (logChannel?.isTextBased?.()) {
+            await logChannel.send({ embeds: [embed] });
+        }
+    } catch (error) {
+        console.error('Failed to send loan log:', error);
+    }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('loan')
@@ -129,6 +157,25 @@ async function handleOffer(interaction, profileData) {
         status: 'pending'
     });
 
+    // Log to loan-logs channel
+    const logEmbed = new EmbedBuilder()
+        .setTitle('📝 New Loan Offer Created')
+        .setColor(0x3498DB)
+        .addFields(
+            { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+            { name: 'Lender', value: `<@${lender.id}> (${lender.tag})`, inline: true },
+            { name: 'Borrower', value: `<@${borrower.id}> (${borrower.tag})`, inline: true },
+            { name: 'Loan Amount', value: `🪙 ${loanAmount.toLocaleString()} points`, inline: false },
+            { name: 'Payback Amount', value: `🪙 ${paybackAmount.toLocaleString()} points`, inline: true },
+            { name: 'Interest', value: `🪙 ${(paybackAmount - loanAmount).toLocaleString()} points`, inline: true },
+            { name: 'Duration', value: `${durationHours} hour(s)`, inline: true },
+            { name: 'Status', value: '⏳ Pending Acceptance', inline: false }
+        )
+        .setFooter({ text: `Created at` })
+        .setTimestamp();
+
+    await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
+
     // Create embed for the loan offer
     const embed = new EmbedBuilder()
         .setTitle('💰 Loan Offer Created')
@@ -232,6 +279,24 @@ async function handleAccept(interaction) {
         acceptedAt: acceptedAt,
         dueAt: dueAt
     });
+
+    // Log to loan-logs channel
+    const logEmbed = new EmbedBuilder()
+        .setTitle('✅ Loan Accepted & Activated')
+        .setColor(0x2ECC71)
+        .addFields(
+            { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+            { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+            { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
+            { name: 'Loan Amount Transferred', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: false },
+            { name: 'Amount Due', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: true },
+            { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:F>`, inline: true },
+            { name: 'Status', value: '✅ Active', inline: false }
+        )
+        .setFooter({ text: `Accepted at` })
+        .setTimestamp();
+
+    await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
 
     // Fire balance change events
     try {
@@ -370,8 +435,27 @@ async function handleRepay(interaction, profileData) {
 
     await loanModel.findByIdAndUpdate(loanId, {
         amountPaid: newAmountPaid,
-        status: isFullyPaid ? 'paid' : 'active'
+        status: isFullyPaid ? 'paid' : 'active',
+        ...(isFullyPaid && { paidAt: new Date() }) // Set paidAt timestamp when fully paid
     });
+
+    // Log to loan-logs channel
+    const logEmbed = new EmbedBuilder()
+        .setTitle(isFullyPaid ? '✅ Loan Fully Repaid (Manual)' : '💵 Partial Repayment Made')
+        .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
+        .addFields(
+            { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+            { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+            { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
+            { name: 'Payment Amount', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
+            { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}`, inline: true },
+            { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
+            { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Partially Paid', inline: false }
+        )
+        .setFooter({ text: `Repayment made at` })
+        .setTimestamp();
+
+    await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
 
     // Fire balance change events
     try {
@@ -527,6 +611,25 @@ async function enforceLoan(loanId, client) {
             status: 'overdue'
         });
 
+        // Log to loan-logs channel
+        const guild = client.guilds.cache.find(g => g.id === loan.serverID);
+        if (guild) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle('⚠️ Loan Overdue')
+                .setColor(0xE74C3C)
+                .addFields(
+                    { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+                    { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+                    { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
+                    { name: 'Amount Remaining', value: `🪙 ${remainingAmount.toLocaleString()} points`, inline: false },
+                    { name: 'Status', value: '⚠️ Overdue - Auto-repayment active', inline: false }
+                )
+                .setFooter({ text: `Became overdue at` })
+                .setTimestamp();
+
+            await sendLoanLog(client, guild.id, logEmbed);
+        }
+
         // Notify borrower
         try {
             const borrower = await client.users.fetch(loan.borrowerId);
@@ -586,7 +689,7 @@ async function rescheduleActiveLoans(client) {
 }
 
 // Auto-repayment function - called when borrower's balance increases
-async function autoRepayLoans(userId, client) {
+async function autoRepayLoans(userId, client, guildId) {
     try {
         // Find all overdue loans for this borrower
         const loans = await loanModel.find({
@@ -626,8 +729,27 @@ async function autoRepayLoans(userId, client) {
                 // Update loan
                 await loanModel.findByIdAndUpdate(loan._id, {
                     amountPaid: newAmountPaid,
-                    status: isFullyPaid ? 'paid' : loan.status
+                    status: isFullyPaid ? 'paid' : loan.status,
+                    ...(isFullyPaid && { paidAt: new Date() }) // Set paidAt timestamp when fully paid
                 });
+
+                // Log to loan-logs channel
+                const logEmbed = new EmbedBuilder()
+                    .setTitle(isFullyPaid ? '✅ Loan Fully Repaid (Auto-Payment)' : '💵 Auto-Payment Made')
+                    .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
+                    .addFields(
+                        { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+                        { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+                        { name: 'Borrower', value: `<@${userId}>`, inline: true },
+                        { name: 'Auto-Payment Amount', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
+                        { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}`, inline: true },
+                        { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
+                        { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Auto-Payment Active', inline: false }
+                    )
+                    .setFooter({ text: `Auto-payment processed at` })
+                    .setTimestamp();
+
+                await sendLoanLog(client, guildId, logEmbed);
 
                 // Notify borrower
                 try {
@@ -683,6 +805,80 @@ async function autoRepayLoans(userId, client) {
     }
 }
 
-// Export the reschedule and auto-repayment functions
+
+async function cleanupExpiredPendingLoans(client) {
+    try {
+        const twelveHoursAgo = Date.now() - (12 * 60 * 60 * 1000);
+
+        const expiredLoans = await loanModel.find({
+            status: 'pending',
+            createdAt: { $lt: twelveHoursAgo }
+        });
+
+        for (const loan of expiredLoans) {
+            // Log to loan-logs channel
+            const guild = client.guilds.cache.find(g => g.id === loan.serverID);
+            if (guild) {
+                const logEmbed = new EmbedBuilder()
+                    .setTitle('⏰ Loan Offer Expired')
+                    .setColor(0x95A5A6)
+                    .addFields(
+                        { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+                        { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+                        { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
+                        { name: 'Loan Amount', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: true },
+                        { name: 'Status', value: '⏰ Expired (not accepted within 12 hours)', inline: false }
+                    )
+                    .setFooter({ text: `Expired at` })
+                    .setTimestamp();
+
+                await sendLoanLog(client, guild.id, logEmbed);
+            }
+
+            // Notify borrower that offer expired
+            try {
+                const borrower = await client.users.fetch(loan.borrowerId);
+                const embed = new EmbedBuilder()
+                    .setTitle('⏰ Loan Offer Expired')
+                    .setColor(0x95A5A6)
+                    .setDescription(`The loan offer from <@${loan.lenderId}> has expired.`)
+                    .addFields(
+                        { name: 'Loan Amount', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: true },
+                        { name: 'Loan ID', value: `\`${loan._id}\``, inline: true }
+                    )
+                    .setTimestamp();
+
+                await borrower.send({ embeds: [embed] });
+            } catch (error) {
+                console.error(`Failed to notify borrower ${loan.borrowerId}:`, error);
+            }
+        }
+
+        const result = await loanModel.deleteMany({
+            status: 'pending',
+            createdAt: { $lt: twelveHoursAgo }
+        });
+
+        if (result.deletedCount > 0) {
+            console.log(`Cleaned up ${result.deletedCount} expired pending loans.`);
+        }
+    } catch (error) {
+        console.error('Failed to cleanup expired pending loans:', error);
+    }
+}
+
+// Run cleanup every hour
+function startPendingLoanCleanup(client) {
+    // Run immediately on startup
+    cleanupExpiredPendingLoans(client);
+
+    // Then run every hour
+    setInterval(() => {
+        cleanupExpiredPendingLoans(client);
+    }, 60 * 60 * 1000); // 1 hour
+}
+
+// Export functions
+module.exports.startPendingLoanCleanup = startPendingLoanCleanup;
 module.exports.rescheduleActiveLoans = rescheduleActiveLoans;
 module.exports.autoRepayLoans = autoRepayLoans;
