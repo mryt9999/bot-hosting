@@ -2,7 +2,7 @@ const { Events } = require('discord.js');
 const profileModel = require("../models/profileSchema");
 const mongoose = require('mongoose');
 const { roleRequirements } = require("../globalValues.json");
-const { rescheduleActiveLoans } = require('../commands/loan');
+const { rescheduleActiveLoans, startPendingLoanCleanup } = require('../commands/loan');
 
 module.exports = {
     name: Events.ClientReady,

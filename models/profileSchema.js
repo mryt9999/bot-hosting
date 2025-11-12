@@ -15,6 +15,7 @@ const profileSchema = new mongoose.Schema({
     balance: { type: Number, default: 100 },
     lastDaily: { type: Number, default: 0 },
     lastDailyRolePay: { type: Number, default: 0 },
+    claimedArcaneRoles: { type: [String], default: [] } // NEW: Array of role IDs that user has claimed rewards for
 });
 
 const model = mongoose.model('economydb', profileSchema);
