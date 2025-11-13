@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const balanceChangeEvent = require('../events/balanceChange');
+const { completeTask } = require('../utils/taskUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -47,7 +48,22 @@ module.exports = {
                     option
                         .setName('player')
                         .setDescription('The player to reset points for')
-                        .setRequired(true))),
+                        .setRequired(true)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('completetask')
+                .setDescription('Mark a task as completed for a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player who completed the task')
+                        .setRequired(true))
+                .addIntegerOption((option) =>
+                    option
+                        .setName('taskid')
+                        .setDescription('The ID of the task to complete')
+                        .setRequired(true)
+                        .setMinValue(1))),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -120,6 +136,29 @@ module.exports = {
             );
 
             await interaction.editReply(`Successfully reset ${receiver.username}'s points.`);
+        }
+
+        if (adminSubcommand === 'completetask') {
+            const player = interaction.options.getUser('player');
+            const taskId = interaction.options.getInteger('taskid');
+            const serverId = interaction.guild?.id;
+
+            const result = await completeTask(player.id, serverId, taskId);
+
+            if (result.success) {
+                // Fire balance change event
+                let targetMember;
+                try {
+                    targetMember = await interaction.guild.members.fetch(player.id);
+                    balanceChangeEvent.execute(targetMember);
+                } catch (_err) {
+                    console.error('Failed to fetch target member for balance change event:', _err);
+                }
+
+                await interaction.editReply(`✅ Task ${taskId} completed for ${player.username}!\n${result.message}`);
+            } else {
+                await interaction.editReply(`❌ Failed to complete task: ${result.message}`);
+            }
         }
     },
 };
