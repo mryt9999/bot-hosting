@@ -12,7 +12,7 @@ async function sendLoanLog(client, guildId, embed) {
         let logChannel = null;
 
         const guild = client.guilds.cache.get(guildId);
-        if (!guild) return;
+        if (!guild) {return;}
 
         if (logChannelId) {
             logChannel = guild.channels.cache.get(logChannelId) ?? await guild.channels.fetch(logChannelId).catch(() => null);
@@ -171,7 +171,7 @@ async function handleOffer(interaction, profileData) {
             { name: 'Duration', value: `${durationHours} hour(s)`, inline: true },
             { name: 'Status', value: '⏳ Pending Acceptance', inline: false }
         )
-        .setFooter({ text: `Created at` })
+        .setFooter({ text: 'Created at' })
         .setTimestamp();
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
@@ -293,7 +293,7 @@ async function handleAccept(interaction) {
             { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:F>`, inline: true },
             { name: 'Status', value: '✅ Active', inline: false }
         )
-        .setFooter({ text: `Accepted at` })
+        .setFooter({ text: 'Accepted at' })
         .setTimestamp();
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
@@ -452,7 +452,7 @@ async function handleRepay(interaction, profileData) {
             { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
             { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Partially Paid', inline: false }
         )
-        .setFooter({ text: `Repayment made at` })
+        .setFooter({ text: 'Repayment made at' })
         .setTimestamp();
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
@@ -624,7 +624,7 @@ async function enforceLoan(loanId, client) {
                     { name: 'Amount Remaining', value: `🪙 ${remainingAmount.toLocaleString()} points`, inline: false },
                     { name: 'Status', value: '⚠️ Overdue - Auto-repayment active', inline: false }
                 )
-                .setFooter({ text: `Became overdue at` })
+                .setFooter({ text: 'Became overdue at' })
                 .setTimestamp();
 
             await sendLoanLog(client, guild.id, logEmbed);
@@ -746,7 +746,7 @@ async function autoRepayLoans(userId, client, guildId) {
                         { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
                         { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Auto-Payment Active', inline: false }
                     )
-                    .setFooter({ text: `Auto-payment processed at` })
+                    .setFooter({ text: 'Auto-payment processed at' })
                     .setTimestamp();
 
                 await sendLoanLog(client, guildId, logEmbed);
@@ -829,7 +829,7 @@ async function cleanupExpiredPendingLoans(client) {
                         { name: 'Loan Amount', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: true },
                         { name: 'Status', value: '⏰ Expired (not accepted within 12 hours)', inline: false }
                     )
-                    .setFooter({ text: `Expired at` })
+                    .setFooter({ text: 'Expired at' })
                     .setTimestamp();
 
                 await sendLoanLog(client, guild.id, logEmbed);

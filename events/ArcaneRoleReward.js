@@ -51,7 +51,7 @@ module.exports = {
 
                 // ArcaneRoleRewards is an array of { roleId, pointReward }
                 const arcaneReward = ArcaneRoleRewards.find(reward => reward.roleId === role.id);
-                if (!arcaneReward) continue;
+                if (!arcaneReward) {continue;}
 
                 // Check if user has already claimed this role reward
                 if (profileData.claimedArcaneRoles.includes(role.id)) {
