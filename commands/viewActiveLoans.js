@@ -86,7 +86,7 @@ module.exports = {
             });
 
             // If only one page, no need for collector
-            if (totalPages <= 1) return;
+            if (totalPages <= 1) {return;}
 
             // Create button collector
             const collector = message.createMessageComponentCollector({
