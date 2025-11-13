@@ -1,6 +1,38 @@
 {
     "dailyMin": 1000,
     "dailyMax": 2000,
+    "taskInfo": [
+        {
+            "taskId": 1,
+            "taskName": "PublicDonation",
+            "maxCompletionsPerWeek": 3,
+            "pointRewardPerCompletion": 1000
+        },
+        {
+            "taskId": 2,
+            "taskName": "ServerDonation",
+            "maxCompletionsPerWeek": 3,
+            "pointRewardPerCompletion": 3000
+        },
+        {
+            "taskId": 3,
+            "taskName": "PublicGiveaway",
+            "maxCompletionsPerWeek": 3,
+            "pointRewardPerCompletion": 1000
+        },
+        {
+            "taskId": 4,
+            "taskName": "ServerGiveaway",
+            "maxCompletionsPerWeek": 3,
+            "pointRewardPerCompletion": 2000
+        },
+        {
+            "taskId": 5,
+            "taskName": "TeamGrinding",
+            "maxCompletionsPerWeek": 3,
+            "pointRewardPerCompletion": 500
+        }
+    ],
     "dailyRolePay": [
         {
             "roleId": "1437830285319344168",
