@@ -12,15 +12,21 @@ A feature-rich Discord bot that provides an interactive economy system with poin
 - **`/leaderboard`** - View the top 10 players
 - **`/commandmenu`** - Interactive button-based command menu (Admin only)
 
+### Task Commands
+- **`/task list`** - View all available tasks with your progress
+- **`/task info <taskid>`** - Get detailed information about a specific task
+
 ### Admin Commands
 - **`/admin addpoints <player> <amount>`** - Add points to a player's balance
 - **`/admin subtractpoints <player> <amount>`** - Remove points from a player's balance
+- **`/admin completetask <player> <taskid>`** - Mark a task as completed for a player
 
 ### Automated Features
 - **Auto Profile Creation** - Profiles are automatically created for users when they interact with the bot
 - **Role Rewards** - Automatically assigns roles based on point thresholds
 - **Balance Change Events** - Updates roles when player balances change
 - **Announcement System** - Posts public announcements for gambling and donations
+- **Weekly Task System** - Tasks reset every Monday at 00:00:00 UTC with point rewards
 
 ## Setup Instructions
 
@@ -94,10 +100,13 @@ bot-hosting/
 │   ├── interactionCreate.js # Interaction handling
 │   └── balanceChange.js     # Balance change events
 ├── models/            # MongoDB schemas
-│   └── profileSchema.js # User profile schema
+│   ├── profileSchema.js # User profile schema
+│   ├── loanSchema.js    # Loan tracking schema
+│   └── taskSchema.js    # Task completion tracking
 ├── utils/             # Utility functions
 │   ├── dbUtils.js     # Database transaction utilities
-│   └── interactionHelper.js # Interaction helpers
+│   ├── interactionHelper.js # Interaction helpers
+│   └── taskUtils.js   # Task management utilities
 ├── index.js           # Main bot entry point
 ├── deploy-commands.js # Command deployment script
 └── globalValues.json  # Configuration values
@@ -112,6 +121,18 @@ bot-hosting/
     serverID: String,    // Discord server ID
     balance: Number,     // User's point balance (default: 100)
     lastDaily: Number    // Timestamp of last daily claim (default: 0)
+}
+```
+
+### Task Schema
+```javascript
+{
+    userId: String,           // Discord user ID
+    serverID: String,         // Discord server ID
+    taskId: Number,           // Task ID from globalValues.json
+    completionsThisWeek: Number,  // Number of completions this week
+    lastCompletionDate: Date, // Timestamp of last completion
+    weekStartDate: Date       // Week start for reset tracking
 }
 ```
 
@@ -135,6 +156,39 @@ Set the range for daily point rewards:
 "dailyMin": 1000,
 "dailyMax": 2000
 ```
+
+### Task Configuration
+Configure weekly tasks with rewards and limits in `globalValues.json`:
+```json
+"taskInfo": [
+    {
+        "taskId": 1,
+        "taskName": "PublicDonation",
+        "maxCompletionsPerWeek": 3,
+        "pointRewardPerCompletion": 1000
+    },
+    {
+        "taskId": 2,
+        "taskName": "ServerDonation",
+        "maxCompletionsPerWeek": 3,
+        "pointRewardPerCompletion": 3000
+    }
+]
+```
+
+**Available Tasks:**
+- **PublicDonation** - Make donations in public channels
+- **ServerDonation** - Make donations to support the server
+- **PublicGiveaway** - Host public giveaway events
+- **ServerGiveaway** - Host server-wide giveaways
+- **TeamGrinding** - Team up with other players
+
+**Task Features:**
+- Weekly reset every Monday at 00:00:00 UTC
+- Configurable completion limits per week
+- Automatic point rewards on completion
+- Progress tracking per user per task
+- Visual progress bars in `/task list`
 
 ## Development
 
