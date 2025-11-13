@@ -170,7 +170,7 @@ module.exports = {
                     announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'gambling' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
                 }
 
-                if (!announceChannel) {return;}
+                if (!announceChannel) { return; }
 
                 msg = win ? `🎉 ${interaction.user} Won ${amount} points!` : `💔 ${interaction.user} lost ${amount} points.`;
 

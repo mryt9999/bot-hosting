@@ -51,8 +51,8 @@ module.exports = {
                     await interaction.editReply({ content: msg, flags: MessageFlags.Ephemeral });
                 } else if (!interaction.replied) {
                     // not deferred and not replied -> reply now (use flags if needed)
-                    if (ephemeral) {await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });}
-                    else {await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });}
+                    if (ephemeral) { await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral }); }
+                    else { await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral }); }
                 } else {
                     await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
                 }
@@ -104,8 +104,8 @@ module.exports = {
             console.error('Failed to update daily claim:', err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
-                    if (ephemeral) {await interaction.reply({ content: 'Error claiming daily.', flags: MessageFlags.Ephemeral });}
-                    else {await interaction.reply({ content: 'Error claiming daily.' });}
+                    if (ephemeral) { await interaction.reply({ content: 'Error claiming daily.', flags: MessageFlags.Ephemeral }); }
+                    else { await interaction.reply({ content: 'Error claiming daily.' }); }
                 } else if (interaction.deferred) {
                     await interaction.editReply('Error claiming daily.');
                 } else {
@@ -121,8 +121,8 @@ module.exports = {
             if (interaction.deferred) {
                 await interaction.editReply(successMsg);
             } else if (!interaction.replied) {
-                if (ephemeral) {await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral });}
-                else {await interaction.reply({ content: successMsg });}
+                if (ephemeral) { await interaction.reply({ content: successMsg, flags: MessageFlags.Ephemeral }); }
+                else { await interaction.reply({ content: successMsg }); }
             } else {
                 await interaction.followUp({ content: successMsg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
             }

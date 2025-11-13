@@ -43,10 +43,10 @@ module.exports = {
                     //send all the roles paid for in a message seperated with \n
                     const rolesList = rolesPaidFor.map(roleTable => {
                         for (const [roleMention, points] of roleTable) {
-                            return `<${roleMention}> (${points} points)`;
+                            return `@${roleMention} (${points} points)`;
                         }
                     }).join('\n');
-                    await message.channel.send(`<@${message.author.id}>, you have received $${totalPay} daily points from your roles:\n${rolesList}`);
+                    await message.channel.send(`<@${message.author.id}>, you have received ${totalPay} daily points from your roles:\n${rolesList}`);
                 }
             }
         }

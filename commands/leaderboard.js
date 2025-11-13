@@ -1,82 +1,100 @@
-const { SlashCommandBuilder } = require('discord.js');
-const { EmbedBuilder } = require('@discordjs/builders');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('leaderboard')
-        .setDescription('Shows top 10 players with highest points'),
-    async execute(interaction, profileData, opts = {}) {
-        const ephemeral = !!opts.ephemeral;
-        // defer reply if not already deferred/replied (use ephemeral if requested)
+        .setDescription('View the server leaderboard'),
+    async execute(interaction, profileData = null, opts = {}) {
         try {
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.deferReply({ ephemeral: !!opts.ephemeral });
+            // Handle ephemeral flag from opts
+            const ephemeral = !!opts.ephemeral;
+            const deferOpts = ephemeral ? { flags: MessageFlags.Ephemeral } : {};
+
+            await interaction.deferReply(deferOpts);
+
+            // Fetch all profiles for this server, sorted by balance
+            const profiles = await profileModel.find({ serverID: interaction.guild.id })
+                .sort({ balance: -1 })
+                .limit(100); // Limit to top 100 to avoid performance issues
+
+            if (!profiles || profiles.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🏆Leaderboard🏆')
+                    .setDescription('No users found in the leaderboard yet.')
+                    .setColor(0x95A5A6)
+                    .setTimestamp();
+
+                return await interaction.editReply({ embeds: [embed] });
             }
-        } catch (_err) {
-            console.error('Failed to defer reply:', err);
-        }
 
-        const { id } = interaction.user;
-        const { balance } = profileData;
+            // Pagination setup
+            const usersPerPage = 10;
+            let currentPage = 0;
+            const totalPages = Math.ceil(profiles.length / usersPerPage);
 
-        const leaderboardEmbed = new EmbedBuilder()
-            .setTitle('🏆 Leaderboard 🏆')
-            .setDescription('Top 10 players with highest points')
-            .setColor(0xFFD700)
-            .setFooter({ text: `Your Balance: ${balance} points` });
+            // Function to generate embed for a specific page
+            const generateEmbed = async (page) => {
+                const start = page * usersPerPage;
+                const end = start + usersPerPage;
+                const pageProfiles = profiles.slice(start, end);
 
-        const members = await profileModel.find().sort({ balance: -1 }).catch(err => {
-            console.error(err);
-            return [];
-        });
+                // Build leaderboard text
+                const leaderboardText = await Promise.all(pageProfiles.map(async (profile, index) => {
+                    const globalRank = start + index + 1;
+                    // let medal = '';
 
-        if (!members || members.length === 0) {
-            const noDataText = 'No leaderboard data available.';
-            if (interaction.deferred) {
-                await interaction.editReply({ content: noDataText });
-            } else if (!interaction.replied) {
-                await interaction.reply({ content: noDataText, ephemeral: !!opts.ephemeral });
-            } else {
-                await interaction.followUp({ content: noDataText, ephemeral: !!opts.ephemeral });
-            }
-            return;
-        }
+                    // Add medals for top 3
+                    // if (globalRank === 1) medal = '🥇';
+                    //  else if (globalRank === 2) medal = '🥈';
+                    // else if (globalRank === 3) medal = '🥉';
 
-        const memberIndex = members.findIndex((member) => member.userId === id);
-        leaderboardEmbed.setFooter({ text: `Your Balance: ${balance} points | Your Rank: #${memberIndex + 1}` });
+                    try {
+                        const user = await interaction.client.users.fetch(profile.userId);
+                        return `\`#${globalRank.toString()}\` **${user.username}**: ${profile.balance.toLocaleString()} points`;
+                    } catch (error) {
+                        return `\`#${globalRank.toString()}\` **Unknown User** - 🪙 ${profile.balance.toLocaleString()} points`;
+                    }
+                }));
 
-        const topTen = members.slice(0, 10);
+                const embed = new EmbedBuilder()
+                    .setTitle('🏆 Leaderboard 🏆')
+                    .setDescription(leaderboardText.join('\n'))
+                    .setColor(0xFFD700)
+                    .setFooter({ text: `Your balance: ${profiles.find(p => p.userId === interaction.user.id)?.balance.toLocaleString() || 0} points | your rank: ${profiles.findIndex(p => p.userId === interaction.user.id) + 1 || 0} \n Page ${page + 1}/${totalPages}` })
+                    .setTimestamp();
 
-        let desc = '';
-        for (let i = 0; i < topTen.length; i++) {
-            try {
-                const memberObj = await interaction.guild.members.fetch(topTen[i].userId);
-                const userObj = memberObj?.user;
-                if (!userObj) {continue;}
-                const userBalance = topTen[i].balance;
-                desc += `**#${i + 1}. ${userObj.username}**: ${userBalance} points\n`;
-            } catch (_err) {
-                // couldn't fetch this member, skip
-                continue;
-            }
-        }
+                return embed;
+            };
 
-        if (desc !== '') {
-            leaderboardEmbed.setDescription(desc);
-        }
+            // Function to generate buttons
+            const generateButtons = (page) => {
+                const row = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('leaderboard_prev')
+                            .setLabel('◀ Previous')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(page === 0),
+                        new ButtonBuilder()
+                            .setCustomId('leaderboard_next')
+                            .setLabel('Next ▶')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(page === totalPages - 1)
+                    );
+                return row;
+            };
 
-        try {
-            if (interaction.deferred) {
-                await interaction.editReply({ embeds: [leaderboardEmbed] });
+            // Send initial message
+            const embed = await generateEmbed(currentPage);
+            const components = totalPages > 1 ? [generateButtons(currentPage)] : [];
 
-            } else if (!interaction.replied) {
-                await interaction.reply({ embeds: [leaderboardEmbed], ephemeral: !!opts.ephemeral });
+            const message = await interaction.editReply({
+                embeds: [embed],
+                components: components
+            });
 
-            } else {
-                await interaction.followUp({ embeds: [leaderboardEmbed], ephemeral: !!opts.ephemeral });
-            }
-            // Auto-delete the reply after 30 seconds if ephemeral
+            // Auto-delete the reply after 60 seconds if ephemeral
             if (ephemeral) {
                 setTimeout(async () => {
                     try {
@@ -84,17 +102,69 @@ module.exports = {
                     } catch (_err) {
                         // ignore
                     }
-                }, 30000);
+                }, 60000);
             }
 
-        } catch (_err) {
-            console.error('Failed to send leaderboard reply:', err);
-            // best-effort fallback
-            try {
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: 'Error showing leaderboard.', flags: MessageFlags.Ephemeral });
+            // If only one page, no need for collector
+            if (totalPages <= 1) return;
+
+            // Create button collector
+            const collector = message.createMessageComponentCollector({
+                componentType: ComponentType.Button,
+                time: opts.ephemeral ? 58000 : 300000 // 5 minutes, or 58 seconds if the opts are ephemeral
+            });
+
+            collector.on('collect', async (buttonInteraction) => {
+                // Check if the button clicker is the command invoker
+                if (buttonInteraction.user.id !== interaction.user.id) {
+                    return await buttonInteraction.reply({
+                        content: 'These buttons are not for you!',
+                        flags: 64 // Ephemeral
+                    });
                 }
-            } catch { }
+
+                // Update page
+                if (buttonInteraction.customId === 'leaderboard_next') {
+                    currentPage = Math.min(currentPage + 1, totalPages - 1);
+                } else if (buttonInteraction.customId === 'leaderboard_prev') {
+                    currentPage = Math.max(currentPage - 1, 0);
+                }
+
+                // Update message
+                await buttonInteraction.update({
+                    embeds: [await generateEmbed(currentPage)],
+                    components: [generateButtons(currentPage)],
+                });
+            });
+
+            collector.on('end', async () => {
+                // Disable buttons after timeout
+                try {
+                    await interaction.editReply({
+                        components: []
+                    });
+                } catch (error) {
+                    console.debug('Failed to remove buttons after timeout:', error);
+                }
+            });
+
+        } catch (error) {
+            console.error('Error generating leaderboard:', error);
+
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply({
+                        content: 'Failed to generate leaderboard. Please try again later.'
+                    });
+                } else {
+                    await interaction.reply({
+                        content: 'Failed to generate leaderboard. Please try again later.',
+                        flags: 64 // Ephemeral
+                    });
+                }
+            } catch (followUpError) {
+                console.error('Failed to send error message:', followUpError);
+            }
         }
     },
 };

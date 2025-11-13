@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const { ArcaneRoleRewards } = require('../globalValues.json');
+const balanceChangeEvent = require('./balanceChange');
 
 console.log('ArcaneRoleReward handler loaded');
 
@@ -93,7 +94,7 @@ module.exports = {
                     try {
                         const channel = await newMember.guild.channels.fetch(lastMsg.channelId);
                         if (channel?.isTextBased?.()) {
-                            await channel.send(`🎉 Congratulations <@${newMember.id}>! You received ${pointReward} points from arcane level.`);
+                            await channel.send(`🎉 Congratulations <@${newMember.id}>! You received ${pointReward} points from **${role.name}**.`);
                         }
                     } catch (err) {
                         console.error(`Could not send message to channel ${lastMsg.channelId}:`, err);
