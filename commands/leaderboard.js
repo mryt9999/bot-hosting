@@ -16,7 +16,7 @@ module.exports = {
             // Fetch all profiles for this server, sorted by balance
             const profiles = await profileModel.find({ serverID: interaction.guild.id })
                 .sort({ balance: -1 })
-                .limit(100); // Limit to top 100 to avoid performance issues
+                .limit(50); // Limit to top 50 to avoid performance issues
 
             if (!profiles || profiles.length === 0) {
                 const embed = new EmbedBuilder()

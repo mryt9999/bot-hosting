@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const loanModel = require('../models/loanSchema');
 const balanceChangeEvent = require('../events/balanceChange');
@@ -12,7 +12,7 @@ async function sendLoanLog(client, guildId, embed) {
         let logChannel = null;
 
         const guild = client.guilds.cache.get(guildId);
-        if (!guild) {return;}
+        if (!guild) { return; }
 
         if (logChannelId) {
             logChannel = guild.channels.cache.get(logChannelId) ?? await guild.channels.fetch(logChannelId).catch(() => null);
@@ -176,6 +176,17 @@ async function handleOffer(interaction, profileData) {
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
 
+    // Create accept button
+    const acceptButton = new ButtonBuilder()
+        .setCustomId(`loan_accept_${loan._id}`)
+        .setLabel('Accept Loan')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('✅');
+
+    const row = new ActionRowBuilder()
+        .addComponents(acceptButton);
+
+
     // Create embed for the loan offer
     const embed = new EmbedBuilder()
         .setTitle('💰 Loan Offer Created')
@@ -189,12 +200,12 @@ async function handleOffer(interaction, profileData) {
             { name: 'Duration', value: `${durationHours} hour(s)`, inline: true },
             { name: 'Loan ID', value: `\`${loan._id}\``, inline: false }
         )
-        .setFooter({ text: 'The borrower must accept this loan offer using /loan accept' })
+        .setFooter({ text: 'The borrower can click the button below or use /loan accept' })
         .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed], components: [row] });
 
-    // Try to DM the borrower
+    // Try to DM the borrower without button
     try {
         const dmEmbed = new EmbedBuilder()
             .setTitle('📬 New Loan Offer')
@@ -216,8 +227,14 @@ async function handleOffer(interaction, profileData) {
     }
 }
 
-async function handleAccept(interaction) {
+async function handleAccept(interaction, profileData) {
     const loanId = interaction.options.getString('loan_id');
+
+    return await processLoanAcceptance(interaction, loanId, profileData);
+}
+
+// Shared function for accepting loans (used by both command and button)
+async function processLoanAcceptance(interaction, loanId, profileData = null) {
     const userId = interaction.user.id;
 
     // Find the loan
@@ -225,50 +242,54 @@ async function handleAccept(interaction) {
     try {
         loan = await loanModel.findById(loanId);
     } catch (_error) {
-        return await interaction.reply({
-            content: 'Invalid loan ID. Please check the ID and try again.',
-            flags: MessageFlags.Ephemeral
-        });
+        const message = 'Invalid loan ID. Please check the ID and try again.';
+        if (interaction.isButton()) {
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
     if (!loan) {
-        return await interaction.reply({
-            content: 'Loan not found. It may have been cancelled or already accepted.',
-            flags: MessageFlags.Ephemeral
-        });
+        const message = 'Loan not found. It may have been cancelled or already accepted.';
+        if (interaction.isButton()) {
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Verify the user is the borrower
     if (loan.borrowerId !== userId) {
-        return await interaction.reply({
-            content: 'You are not the borrower of this loan.',
-            flags: MessageFlags.Ephemeral
-        });
+        const message = 'This button is not for you. Only the borrower can accept this loan.';
+        if (interaction.isButton()) {
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Check if loan is still pending
     if (loan.status !== 'pending') {
-        return await interaction.reply({
-            content: `This loan has already been ${loan.status}.`,
-            flags: MessageFlags.Ephemeral
-        });
+        const message = `This loan has already been ${loan.status}.`;
+        if (interaction.isButton()) {
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Transfer points from lender to borrower
     const transferResult = await transferPoints(loan.lenderId, loan.borrowerId, loan.loanAmount);
 
     if (!transferResult.success) {
+        let message;
         if (transferResult.reason === 'insufficient_funds') {
-            return await interaction.reply({
-                content: 'The lender no longer has sufficient funds for this loan.',
-                flags: MessageFlags.Ephemeral
-            });
+            message = 'The lender no longer has sufficient funds for this loan.';
         } else {
-            return await interaction.reply({
-                content: 'Failed to process the loan. Please try again later.',
-                flags: MessageFlags.Ephemeral
-            });
+            message = 'Failed to process the loan. Please try again later.';
         }
+
+        if (interaction.isButton()) {
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Update loan status
@@ -302,6 +323,7 @@ async function handleAccept(interaction) {
     try {
         const lenderMember = await interaction.guild.members.fetch(loan.lenderId);
         const borrowerMember = await interaction.guild.members.fetch(loan.borrowerId);
+        const balanceChangeEvent = require('../events/balanceChange');
         balanceChangeEvent.execute(lenderMember);
         balanceChangeEvent.execute(borrowerMember);
     } catch (error) {
@@ -322,7 +344,34 @@ async function handleAccept(interaction) {
         .setFooter({ text: 'Use /loan repay to pay back the loan early' })
         .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
+    // If this was a button interaction, update the original message
+    if (interaction.isButton()) {
+        // Disable the button
+        const disabledButton = new ButtonBuilder()
+            .setCustomId(`loan_accept_${loan._id}`)
+            .setLabel('Loan Accepted')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('✅')
+            .setDisabled(true);
+
+        const disabledRow = new ActionRowBuilder()
+            .addComponents(disabledButton);
+
+        // Update the message to disable the button
+        try {
+            await interaction.update({ components: [disabledRow] });
+        } catch (error) {
+            console.error('Failed to update button:', error);
+            // If update fails, just reply instead
+            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+            return;
+        }
+
+        // Send follow-up with confirmation
+        await interaction.followUp({ embeds: [embed] });
+    } else {
+        await interaction.reply({ embeds: [embed] });
+    }
 
     // Notify the lender
     try {
@@ -347,6 +396,8 @@ async function handleAccept(interaction) {
     // Schedule automatic enforcement
     scheduleEnforcement(loan._id, dueAt, interaction.client);
 }
+
+// ...existing code for handleRepay, handleList, handlePending...
 
 async function handleRepay(interaction, profileData) {
     const loanId = interaction.options.getString('loan_id');
@@ -436,7 +487,7 @@ async function handleRepay(interaction, profileData) {
     await loanModel.findByIdAndUpdate(loanId, {
         amountPaid: newAmountPaid,
         status: isFullyPaid ? 'paid' : 'active',
-        ...(isFullyPaid && { paidAt: new Date() }) // Set paidAt timestamp when fully paid
+        ...(isFullyPaid && { paidAt: new Date() })
     });
 
     // Log to loan-logs channel
@@ -567,6 +618,7 @@ async function handlePending(interaction) {
 
     if (pendingLoans.length === 0) {
         embed.setDescription('You have no pending loan offers.');
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     } else {
         const loansText = pendingLoans.map(loan => {
             const durationHours = Math.floor(loan.duration / (60 * 60 * 1000));
@@ -574,10 +626,24 @@ async function handlePending(interaction) {
             return `**ID:** \`${loan._id}\`\n**Lender:** <@${loan.lenderId}>\n**Loan Amount:** 🪙 ${loan.loanAmount.toLocaleString()}\n**Payback:** 🪙 ${loan.paybackAmount.toLocaleString()} (Interest: ${interest.toLocaleString()})\n**Duration:** ${durationHours} hour(s)\n`;
         }).join('\n');
         embed.setDescription(loansText);
-        embed.setFooter({ text: 'Use /loan accept <loan_id> to accept an offer' });
-    }
+        embed.setFooter({ text: 'Use /loan accept <loan_id> or click the Accept button on the loan offer' });
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        // Add accept buttons for each pending loan
+        const buttons = pendingLoans.slice(0, 5).map(loan => // Limit to 5 buttons per row
+            new ButtonBuilder()
+                .setCustomId(`loan_accept_${loan._id}`)
+                .setLabel(`Accept ${loan._id.toString().slice(-6)}`)
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('✅')
+        );
+
+        const rows = [];
+        for (let i = 0; i < buttons.length; i += 5) {
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+        }
+
+        await interaction.reply({ embeds: [embed], components: rows, flags: MessageFlags.Ephemeral });
+    }
 }
 
 // Schedule automatic enforcement when loan is due
@@ -730,7 +796,7 @@ async function autoRepayLoans(userId, client, guildId) {
                 await loanModel.findByIdAndUpdate(loan._id, {
                     amountPaid: newAmountPaid,
                     status: isFullyPaid ? 'paid' : loan.status,
-                    ...(isFullyPaid && { paidAt: new Date() }) // Set paidAt timestamp when fully paid
+                    ...(isFullyPaid && { paidAt: new Date() })
                 });
 
                 // Log to loan-logs channel
@@ -882,3 +948,4 @@ function startPendingLoanCleanup(client) {
 module.exports.startPendingLoanCleanup = startPendingLoanCleanup;
 module.exports.rescheduleActiveLoans = rescheduleActiveLoans;
 module.exports.autoRepayLoans = autoRepayLoans;
+module.exports.processLoanAcceptance = processLoanAcceptance;

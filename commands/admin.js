@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const balanceChangeEvent = require('../events/balanceChange');
 const globalValues = require('../globalValues.json');
@@ -10,6 +10,9 @@ const taskChoices = Object.values(globalValues.taskInfo).map(task => ({
     name: task.taskName,
     value: task.taskName
 }));
+
+// Your user ID - replace with your actual Discord user ID
+const OWNER_USER_ID = '984131525715054653'; //owner's user ID to dm
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -74,6 +77,7 @@ module.exports = {
                         .setDescription('The task to give')
                         .setRequired(true)
                         .addChoices(...taskChoices)))
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('withdrawfrom')
@@ -88,12 +92,41 @@ module.exports = {
                         .setName('amount')
                         .setDescription('The amount of points to withdraw')
                         .setRequired(true)
+                        .setMinValue(1)))
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('addglobalwithdrawlimit')
+                .setDescription('Increase the global weekly withdraw limit by a specified amount')
+                .addIntegerOption((option) =>
+                    option
+                        .setName('amount')
+                        .setDescription('The amount to add to the global withdraw limit')
+                        .setRequired(true)
                         .setMinValue(1))),
 
     async execute(interaction) {
         await interaction.deferReply();
 
         const adminSubcommand = interaction.options.getSubcommand();
+
+        // Function to notify owner
+        async function notifyOwner(commandName, details) {
+            if (interaction.user.id !== OWNER_USER_ID) {
+                try {
+                    const owner = await interaction.client.users.fetch(OWNER_USER_ID);
+                    await owner.send(
+                        `🚨 **Admin Command Used**\n\n` +
+                        `**User:** ${interaction.user.tag} (${interaction.user.id})\n` +
+                        `**Server:** ${interaction.guild?.name || 'Unknown'}\n` +
+                        `**Command:** /admin ${commandName}\n` +
+                        `**Details:** ${details}`
+                    );
+                } catch (error) {
+                    console.error('Failed to send DM notification to owner:', error);
+                }
+            }
+        }
 
         if (adminSubcommand === 'addpoints') {
             const receiver = interaction.options.getUser('player');
@@ -123,6 +156,9 @@ module.exports = {
             if (targetMember) {
                 balanceChangeEvent.execute(targetMember);
             }
+
+            // Notify owner
+            await notifyOwner('addpoints', `Added ${amount.toLocaleString()} points to ${receiver.tag} (${receiver.id})`);
 
             await interaction.editReply(`Successfully added ${amount} points to ${receiver.username}'s balance.`);
         }
@@ -156,11 +192,19 @@ module.exports = {
                 balanceChangeEvent.execute(targetMember);
             }
 
+            // Notify owner
+            await notifyOwner('subtractpoints', `Subtracted ${amount.toLocaleString()} points from ${receiver.tag} (${receiver.id})`);
+
             await interaction.editReply(`Successfully subtracted ${amount} points from ${receiver.username}'s balance.`);
         }
 
         if (adminSubcommand === 'resetpoints') {
             const receiver = interaction.options.getUser('player');
+
+            //we also need to nofifyOwner of the amount of points reset
+            const profileData = await profileModel.findOne({ userId: receiver.id });
+            const previousBalance = profileData ? profileData.balance : 0;
+
             await profileModel.findOneAndUpdate(
                 {
                     userId: receiver.id
@@ -186,6 +230,9 @@ module.exports = {
             if (targetMember) {
                 balanceChangeEvent.execute(targetMember);
             }
+
+            // Notify owner
+            await notifyOwner('resetpoints', `Reset ${previousBalance} points for ${receiver.tag} (${receiver.id})`);
 
             await interaction.editReply(`Successfully reset ${receiver.username}'s points.`);
         }
@@ -266,11 +313,14 @@ module.exports = {
                     console.error('Failed to fetch target member for balance change event:', err);
                 }
 
-                await interaction.editReply(
-                    `Successfully gave "${taskName}" task to ${receiver.username}.\n` +
-                    `Completions: ${taskEntry.completions}/${taskDef.maxCompletionsPerWeek}\n` +
-                    `Points awarded: ${taskDef.pointRewardPerCompletion}`
-                );
+                const embed = new EmbedBuilder()
+                    .setColor(0x00FF00) // Green color for success
+                    .setTitle(`✅ ${receiver.tag} Completed Task`)
+                    .setDescription(`**${taskName}** completion given to ${receiver.username}\n ${taskEntry.completions}/${taskDef.maxCompletionsPerWeek} completions \n Reward: ${taskDef.pointRewardPerCompletion.toLocaleString()} points`)
+                    .setFooter({ text: receiver.username, iconURL: receiver.displayAvatarURL({ dynamic: true }) })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
 
             } catch (error) {
                 console.error('Error giving task:', error);
@@ -323,6 +373,8 @@ module.exports = {
                     console.error('Failed to fetch target member for balance change event:', err);
                 }
 
+                await notifyOwner('withdrawfrom', `withdrew ${amount.toLocaleString()} points from ${receiver.tag} (${receiver.id})`);
+
                 await interaction.editReply(
                     `Successfully withdrew ${amount.toLocaleString()} points from ${receiver.username}.\n` +
                     `New balance: ${profileData.balance.toLocaleString()} points\n` +
@@ -332,6 +384,78 @@ module.exports = {
             } catch (error) {
                 console.error('Error processing withdrawal:', error);
                 await interaction.editReply('An error occurred while processing the withdrawal. Please try again.');
+            }
+        }
+
+        if (adminSubcommand === 'addglobalwithdrawlimit') {
+            const amount = interaction.options.getInteger('amount');
+
+            try {
+                // Get global withdraw data
+                const globalWithdrawData = await withdrawUtil.getGlobalWithdrawData();
+
+                // Store previous limit for notification
+                const previousLimit = globalValues.maxGlobalWithdrawPerWeek;
+                const previousRemaining = previousLimit - globalWithdrawData.totalWithdrawnThisWeek;
+
+                // Increase the global limit temporarily (stored in database)
+                globalWithdrawData.temporaryLimitIncrease = (globalWithdrawData.temporaryLimitIncrease || 0) + amount;
+                await globalWithdrawData.save();
+
+                const newLimit = previousLimit + globalWithdrawData.temporaryLimitIncrease;
+                const newRemaining = newLimit - globalWithdrawData.totalWithdrawnThisWeek;
+
+                // Create success embed
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Global Withdraw Limit Increased')
+                    .setColor(0x2ECC71)
+                    .setDescription(`The global weekly withdraw limit has been increased by **${amount.toLocaleString()}** points.`)
+                    .addFields(
+                        {
+                            name: 'Previous Limit',
+                            value: `${previousLimit.toLocaleString()} points`,
+                            inline: true
+                        },
+                        {
+                            name: 'New Limit',
+                            value: `${newLimit.toLocaleString()} points`,
+                            inline: true
+                        },
+                        {
+                            name: 'Amount Added',
+                            value: `+${amount.toLocaleString()} points`,
+                            inline: true
+                        },
+                        {
+                            name: 'Previous Remaining',
+                            value: `${previousRemaining.toLocaleString()} points`,
+                            inline: true
+                        },
+                        {
+                            name: 'New Remaining',
+                            value: `${newRemaining.toLocaleString()} points`,
+                            inline: true
+                        },
+                        {
+                            name: 'Total Withdrawn This Week',
+                            value: `${globalWithdrawData.totalWithdrawnThisWeek.toLocaleString()} points`,
+                            inline: true
+                        }
+                    )
+                    .setFooter({ text: 'This increase will reset at the start of next week' })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [embed] });
+
+                // Notify owner
+                await notifyOwner(
+                    'addglobalwithdrawlimit',
+                    `Increased global withdraw limit by ${amount.toLocaleString()} points (from ${previousLimit.toLocaleString()} to ${newLimit.toLocaleString()})`
+                );
+
+            } catch (error) {
+                console.error('Error increasing global withdraw limit:', error);
+                await interaction.editReply('An error occurred while increasing the global withdraw limit. Please try again.');
             }
         }
 

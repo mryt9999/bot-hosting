@@ -1,8 +1,11 @@
 {
+    "pointMultiplier": 1,
     "dailyMin": 1000,
     "dailyMax": 2000,
     "maxWithdrawPerWeek": 50000,
     "maxGlobalWithdrawPerWeek": 200000,
+    "minPointsPerWithdraw": 10000,
+    "maxGensPerWithdraw": 50,
     "pointsPerGodlyGen": 1,
     "gensAfterGodly": [
         "Godly",

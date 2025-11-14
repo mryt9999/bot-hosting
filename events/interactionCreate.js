@@ -75,8 +75,27 @@ module.exports = {
             return;
         }
 
+        // Handle string select menus
+        if (interaction.isStringSelectMenu()) {
+            if (interaction.customId.startsWith('transfer_gen_select_')) {
+                const userId = interaction.customId.replace('transfer_gen_select_', '');
+                const { handleGenSelect } = require('../commands/transfer');
+                return await handleGenSelect(interaction, userId);
+            }
+        }
+
         // Handle modal submit for gamble and donate
         if (interaction.isModalSubmit()) {
+
+            // Transfer modal
+            if (interaction.customId.startsWith('transfer_amount_modal_')) {
+                const parts = interaction.customId.replace('transfer_amount_modal_', '').split('_');
+                const userId = parts[0];
+                const selectedGen = parts[1];
+                const { handleTransferAmountModal } = require('../commands/transfer');
+                return await handleTransferAmountModal(interaction, userId, selectedGen);
+            }
+
             // Gamble modal
             if (interaction.customId.startsWith('gambleModal:')) {
                 const amountRaw = interaction.fields.getTextInputValue('gambleAmount');
@@ -174,96 +193,146 @@ module.exports = {
         }
 
         // Handle button interactions
-        if (interaction.isButton() && interaction.customId.startsWith('cmd:')) {
-            const cmdName = interaction.customId.split(':')[1];
-            const command = interaction.client.commands.get(cmdName);
+        if (interaction.isButton()) {
 
-            if (!command) return;
+            // Handle transfer buttons
+            if (interaction.customId.startsWith('transfer_start_')) {
+                const userId = interaction.customId.replace('transfer_start_', '');
+                const { handleTransferStart } = require('../commands/transfer');
+                return await handleTransferStart(interaction, userId);
+            }
 
-            // Open a modal for gamble so player can enter an amount
-            if (cmdName === 'gamble') {
-                const modal = new ModalBuilder()
-                    .setCustomId(`gambleModal:${interaction.user.id}`)
-                    .setTitle('Gamble Amount');
+            if (interaction.customId.startsWith('transfer_confirm_')) {
+                const parts = interaction.customId.replace('transfer_confirm_', '').split('_');
+                const userId = parts[0];
+                const selectedGen = parts[1];
+                const genAmount = parts[2];
+                const { handleTransferConfirm } = require('../commands/transfer');
+                return await handleTransferConfirm(interaction, userId, selectedGen, genAmount);
+            }
 
-                const amountInput = new TextInputBuilder()
-                    .setCustomId('gambleAmount')
-                    .setLabel('Amount of points to gamble')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('Enter amount (numbers only)')
-                    .setRequired(true);
+            if (interaction.customId.startsWith('transfer_cancel_')) {
+                const userId = interaction.customId.replace('transfer_cancel_', '');
+                const { handleTransferCancel } = require('../commands/transfer');
+                return await handleTransferCancel(interaction, userId);
+            }
 
-                const row = new ActionRowBuilder().addComponents(amountInput);
 
-                await interaction.showModal(modal.addComponents(row));
+            // Handle loan accept button
+            if (interaction.customId.startsWith('loan_accept_')) {
+                console.log('Processing loan acceptance button...');
+                const loanId = interaction.customId.replace('loan_accept_', '');
+                const { processLoanAcceptance } = require('../commands/loan');
+                try {
+                    await processLoanAcceptance(interaction, loanId, profileData);
+                } catch (error) {
+                    console.error('Error processing loan acceptance:', error);
+                    if (!interaction.replied && !interaction.deferred) {
+                        await replyEphemeral({ content: 'Error accepting loan. Please try again.' });
+                    }
+                }
                 return;
             }
 
-            // For donate: present a user select so the player can pick recipient easily
-            if (cmdName === 'donate') {
-                const userSelect = new UserSelectMenuBuilder()
-                    .setCustomId(`donateSelect:${interaction.user.id}`)
-                    .setPlaceholder('Select a recipient to donate to')
-                    .setMinValues(1)
-                    .setMaxValues(1);
+            // Handle command buttons (cmd:*)
+            if (interaction.customId.startsWith('cmd:')) {
+                const cmdName = interaction.customId.split(':')[1];
+                const command = interaction.client.commands.get(cmdName);
 
-                const row = new ActionRowBuilder().addComponents(userSelect);
+                if (!command) return;
+
+                // Open a modal for gamble so player can enter an amount
+                if (cmdName === 'gamble') {
+                    const modal = new ModalBuilder()
+                        .setCustomId(`gambleModal:${interaction.user.id}`)
+                        .setTitle('Gamble Amount');
+
+                    const amountInput = new TextInputBuilder()
+                        .setCustomId('gambleAmount')
+                        .setLabel('Amount of points to gamble')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('Enter amount (numbers only)')
+                        .setRequired(true);
+
+                    const row = new ActionRowBuilder().addComponents(amountInput);
+
+                    await interaction.showModal(modal.addComponents(row));
+                    return;
+                }
+
+                // For donate: present a user select so the player can pick recipient easily
+                if (cmdName === 'donate') {
+                    const userSelect = new UserSelectMenuBuilder()
+                        .setCustomId(`donateSelect:${interaction.user.id}`)
+                        .setPlaceholder('Select a recipient to donate to')
+                        .setMinValues(1)
+                        .setMaxValues(1);
+
+                    const row = new ActionRowBuilder().addComponents(userSelect);
+
+                    return await replyEphemeral({
+                        content: 'Choose a recipient for your donation:',
+                        components: [row]
+                    });
+                }
+
+
+                // If command has no required options, execute it directly
+                if (!command.data.options?.some(opt => opt.required)) {
+                    try {
+                        const sensitive = ['leaderboard', 'balance', 'daily'];
+                        const opts = { invokedByButton: true, ephemeral: sensitive.includes(command.data.name) };
+                        await command.execute(interaction, profileData, opts);
+                    } catch (error) {
+                        console.error(error);
+                        if (!interaction.replied && !interaction.deferred) {
+                            await replyEphemeral({
+                                content: 'Error executing the command!',
+                            });
+                        }
+                    }
+
+                    return;
+                }
+
+                // If command has required options, show info embed
+                const cmdEmbed = new EmbedBuilder()
+                    .setTitle(`/${command.data.name}`)
+                    .setDescription(command.data.description)
+                    .setColor('#4CAF50');
+
+                if (command.data.options?.length > 0) {
+                    const optionsText = command.data.options
+                        .map(opt => `• **${opt.name}**: ${opt.description}`)
+                        .join('\n');
+                    cmdEmbed.addFields({ name: 'Options', value: optionsText });
+                }
+
+                const buttonRow = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('back')
+                            .setLabel('Back to Menu')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
 
                 return await replyEphemeral({
-                    content: 'Choose a recipient for your donation:',
-                    components: [row]
+                    embeds: [cmdEmbed],
+                    components: [buttonRow]
                 });
             }
 
-            // If command has no required options, execute it directly
-            if (!command.data.options?.some(opt => opt.required)) {
+            // Handle close/back buttons
+            if (interaction.customId === 'close' || interaction.customId === 'back') {
                 try {
-                    const sensitive = ['leaderboard', 'balance', 'daily'];
-                    const opts = { invokedByButton: true, ephemeral: sensitive.includes(command.data.name) };
-                    await command.execute(interaction, profileData, opts);
-                } catch (error) {
-                    console.error(error);
-                    if (!interaction.replied && !interaction.deferred) {
-                        await replyEphemeral({
-                            content: 'Error executing the command!',
-                        });
-                    }
+                    await interaction.deferUpdate();
+                    await interaction.deleteReply();
+                } catch (err) {
+                    console.error('Error handling close/back button:', err);
                 }
-
                 return;
             }
-
-            // If command has required options, show info embed
-            const cmdEmbed = new EmbedBuilder()
-                .setTitle(`/${command.data.name}`)
-                .setDescription(command.data.description)
-                .setColor('#4CAF50');
-
-            if (command.data.options?.length > 0) {
-                const optionsText = command.data.options
-                    .map(opt => `• **${opt.name}**: ${opt.description}`)
-                    .join('\n');
-                cmdEmbed.addFields({ name: 'Options', value: optionsText });
-            }
-
-            const buttonRow = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('back')
-                        .setLabel('Back to Menu')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-            return await replyEphemeral({
-                embeds: [cmdEmbed],
-                components: [buttonRow]
-            });
         }
 
-        // Handle back button
-        if (interaction.isButton() && interaction.customId === 'back') {
-            const menuCommand = interaction.client.commands.get('commandmenu');
-            await menuCommand.execute(interaction);
-        }
     },
 };
