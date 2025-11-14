@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const profileModel = require('../models/profileSchema');
-const balanceChangeEvent = require('../events/balanceChange');
+const { updateBalance } = require('../utils/dbUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -98,19 +98,25 @@ module.exports = {
         // 50/50 gamble
         const win = Math.random() < 0.5;
         try {
-            if (win) {
-                await profileModel.findOneAndUpdate(
-                    { userId: interaction.user.id },
-                    { $inc: { balance: amount } }
-                );
-                let targetMember;
-                try {
-                    targetMember = await interaction.guild.members.fetch(interaction.user.id);
-                } catch (_err) {
-                    console.error('Failed to fetch target member for balance change event:', err);
+            const balanceChange = win ? amount : -amount;
+            const updateResult = await updateBalance(
+                interaction.user.id,
+                balanceChange,
+                { interaction },
+                { serverId: interaction.guild?.id ?? null }
+            );
+
+            if (!updateResult.success) {
+                const errorMsg = 'An error occurred while processing your gamble.';
+                if (interaction.deferred) {
+                    await interaction.editReply(errorMsg);
+                } else {
+                    await interaction.followUp({ content: errorMsg, ...flags });
                 }
-                // FIRE BALANCE CHANGE EVENT
-                balanceChangeEvent.execute(targetMember);
+                return;
+            }
+
+            if (win) {
                 if (interaction.deferred) {
                     await interaction.editReply(`🎉 Congratulations! You won ${amount} points!`);
                 } else {
@@ -127,18 +133,6 @@ module.exports = {
                     }, 30000);
                 }
             } else {
-                await profileModel.findOneAndUpdate(
-                    { userId: interaction.user.id },
-                    { $inc: { balance: -amount } }
-                );
-                let targetMember;
-                try {
-                    targetMember = await interaction.guild.members.fetch(interaction.user.id);
-                } catch (_err) {
-                    console.error('Failed to fetch target member for balance change event:', err);
-                }
-                // FIRE BALANCE CHANGE EVENT
-                balanceChangeEvent.execute(targetMember);
                 if (interaction.deferred) {
                     await interaction.editReply(`💔 you lost ${amount} points. Better luck next time!`);
                 } else {

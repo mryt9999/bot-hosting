@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const parseMilliseconds = require('parse-ms-2');
 const profileModel = require('../models/profileSchema');
 const { dailyMin, dailyMax } = require('../globalValues.json');
-const balanceChangeEvent = require('../events/balanceChange');
+const { updateBalance } = require('../utils/dbUtils');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -84,22 +84,33 @@ module.exports = {
         const randomPoints = Math.floor(Math.random() * (dailyMax - dailyMin + 1)) + dailyMin;
 
         try {
-            let targetMember;
-            try {
-                targetMember = await interaction.guild.members.fetch(interaction.user.id);
-            } catch (_err) {
-                console.error('Failed to fetch target member for balance change event:', err);
-            }
+            // Update balance and timestamp
             await profileModel.findOneAndUpdate(
                 { userId: id },
-                {
-                    $set: { lastDaily: Date.now() },
-                    $inc: { balance: randomPoints },
-                },
+                { $set: { lastDaily: Date.now() } },
                 { upsert: true }
             );
-            // FIRE BALANCE CHANGE EVENT
-            balanceChangeEvent.execute(targetMember);
+
+            // Update balance using the utility function (which fires the event)
+            const updateResult = await updateBalance(
+                id,
+                randomPoints,
+                { interaction },
+                { serverId: interaction.guild?.id ?? null }
+            );
+
+            if (!updateResult.success) {
+                const msg = 'Error claiming daily.';
+                if (interaction.deferred) {
+                    await interaction.editReply(msg);
+                } else if (!interaction.replied) {
+                    if (ephemeral) { await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral }); }
+                    else { await interaction.reply({ content: msg }); }
+                } else {
+                    await interaction.followUp({ content: msg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
+                }
+                return;
+            }
         } catch (_err) {
             console.error('Failed to update daily claim:', err);
             try {

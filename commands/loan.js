@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const loanModel = require('../models/loanSchema');
-const balanceChangeEvent = require('../events/balanceChange');
 const { transferPoints } = require('../utils/dbUtils');
 
 // Helper function to send loan logs to the designated channel
@@ -276,7 +275,7 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
     }
 
     // Transfer points from lender to borrower
-    const transferResult = await transferPoints(loan.lenderId, loan.borrowerId, loan.loanAmount);
+    const transferResult = await transferPoints(loan.lenderId, loan.borrowerId, loan.loanAmount, { interaction });
 
     if (!transferResult.success) {
         let message;
@@ -319,17 +318,7 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
 
-    // Fire balance change events
-    try {
-        const lenderMember = await interaction.guild.members.fetch(loan.lenderId);
-        const borrowerMember = await interaction.guild.members.fetch(loan.borrowerId);
-        const balanceChangeEvent = require('../events/balanceChange');
-        balanceChangeEvent.execute(lenderMember);
-        balanceChangeEvent.execute(borrowerMember);
-    } catch (error) {
-        console.error('Failed to fetch members for balance change event:', error);
-    }
-
+    // Balance change events are already fired by transferPoints
     // Create confirmation embed
     const embed = new EmbedBuilder()
         .setTitle('✅ Loan Accepted')
@@ -471,7 +460,7 @@ async function handleRepay(interaction, profileData) {
     }
 
     // Transfer points
-    const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay);
+    const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay, { interaction });
 
     if (!transferResult.success) {
         return await interaction.reply({
@@ -508,16 +497,7 @@ async function handleRepay(interaction, profileData) {
 
     await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
 
-    // Fire balance change events
-    try {
-        const lenderMember = await interaction.guild.members.fetch(loan.lenderId);
-        const borrowerMember = await interaction.guild.members.fetch(loan.borrowerId);
-        balanceChangeEvent.execute(lenderMember);
-        balanceChangeEvent.execute(borrowerMember);
-    } catch (error) {
-        console.error('Failed to fetch members for balance change event:', error);
-    }
-
+    // Balance change events are already fired by transferPoints
     // Create confirmation embed
     const embed = new EmbedBuilder()
         .setTitle(isFullyPaid ? '✅ Loan Fully Repaid' : '💵 Partial Payment Made')
@@ -784,8 +764,8 @@ async function autoRepayLoans(userId, client, guildId) {
             const remainingAmount = loan.paybackAmount - loan.amountPaid;
             const amountToRepay = Math.min(availableBalance, remainingAmount);
 
-            // Transfer points
-            const transferResult = await transferPoints(userId, loan.lenderId, amountToRepay);
+            // Transfer points - need to pass client context
+            const transferResult = await transferPoints(userId, loan.lenderId, amountToRepay, { client });
 
             if (transferResult.success) {
                 availableBalance -= amountToRepay;
