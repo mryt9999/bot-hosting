@@ -1,78 +1,135 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { listTasksForUser, getTask } = require('../utils/taskManager');
+const profileModel = require('../models/profileSchema');
 const globalValues = require('../globalValues.json');
+const taskManager = require('../utils/taskManager');
+const dbUtils = require('../utils/dbUtils');
+
+// Generate task choices from globalValues
+const taskChoices = Object.values(globalValues.taskInfo).map(task => ({
+    name: task.taskName,
+    value: task.taskName
+}));
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('task')
-        .setDescription('Task related commands')
-        .addSubcommand(sub =>
-            sub
+        .setDescription('Manage and view tasks')
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('list')
-                .setDescription('View all available tasks with your progress'))
-        .addSubcommand(sub =>
-            sub
+                .setDescription('List all available tasks'))
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('info')
-                .setDescription('Get detailed information about a specific task')
-                .addIntegerOption(opt => opt
-                    .setName('taskid')
-                    .setDescription('ID of the task')
-                    .setRequired(true))),
+                .setDescription('Get info about a specific task')
+                .addStringOption(option =>
+                    option
+                        .setName('taskname')
+                        .setDescription('The name of the task')
+                        .setRequired(true)
+                        .addChoices(...taskChoices))), // ADD THIS LINE
+
     async execute(interaction, profileData = null, opts = {}) {
-        try {
-            const sub = interaction.options.getSubcommand();
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const subcommand = interaction.options.getSubcommand();
 
-            if (sub === 'list') {
-                // Use profileData if provided to avoid extra DB lookup
-                const tasks = await listTasksForUser(interaction.user.id, profileData);
+        // Ensure profileData exists
+        if (!profileData) {
+            profileData = await dbUtils.ensureProfile(interaction.user.id, interaction.guild?.id ?? null);
+        }
+        // Ensure all tasks are present in user profile
+        await taskManager.ensureUserTasks(profileData);
+        // Reset weekly tasks if needed
+        for (const taskEntry of profileData.tasks) {
+            taskManager.resetWeeklyTaskIfNeeded(taskEntry);
+        }
+        await profileData.save();
 
-                if (!tasks || tasks.length === 0) {
-                    return interaction.reply({ content: 'No tasks are configured.', ephemeral: true });
-                }
+        if (subcommand === 'list') {
+            const embed = new EmbedBuilder()
+                .setTitle('📋 Task List 📋')
+                .setColor(0x3498DB)
+                .setTimestamp();
+            for (const [_, taskDef] of Object.entries(globalValues.taskInfo)) {
+                const taskEntry = profileData.tasks.find(t => t.taskId === taskDef.taskId);
+                const completions = taskEntry ? taskEntry.completions : 0;
+                const firstCompletion = taskEntry ? taskEntry.firstCompletionAt : 0;
 
-                const embed = new EmbedBuilder()
-                    .setTitle('Available Tasks')
-                    .setColor('#2f3136')
-                    .setTimestamp();
-
-                for (const t of tasks) {
-                    const percent = t.max > 0 ? Math.min(100, Math.round((t.userCount / t.max) * 100)) : 0;
-                    const progressBar = `[${'█'.repeat(Math.round(percent / 10))}${'░'.repeat(10 - Math.round(percent / 10))}] ${t.userCount}/${t.max}`;
+                if (firstCompletion === 0) {
                     embed.addFields({
-                        name: `#${t.taskId} — ${t.description || t.name || 'Unnamed'}`,
-                        value: `Reward: ${t.points?.toLocaleString?.() ?? t.points} points\n${progressBar}`,
+                        name: taskDef.taskName,
+                        value: `Completions: ${completions} / ${taskDef.maxCompletionsPerWeek}`,
+                        inline: false
                     });
+                    continue;
                 }
 
-                return interaction.reply({ embeds: [embed], ephemeral: true });
-            } else if (sub === 'info') {
-                const taskId = interaction.options.getInteger('taskid');
-                const task = getTask(taskId);
+                const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+                const now = Date.now();
+                const timeSinceFirstCompletion = now - firstCompletion;
 
-                if (!task) {
-                    return interaction.reply({ content: `Task ${taskId} not found.`, ephemeral: true });
+                if (timeSinceFirstCompletion >= oneWeekMs) {
+                    embed.addFields({
+                        name: taskDef.taskName,
+                        value: `Completions: ${completions} / ${taskDef.maxCompletionsPerWeek}`,
+                        inline: false
+                    });
+                    continue;
                 }
 
-                const def = globalValues.taskInfo?.find(x => x.taskId === taskId) || {};
-                const embed = new EmbedBuilder()
-                    .setTitle(`Task #${taskId} — ${task.name ?? def.taskName ?? 'Task'}`)
-                    .setColor('#2f3136')
-                    .addFields(
-                        { name: 'Description', value: task.description ?? def.taskDescription ?? 'No description provided', inline: false },
-                        { name: 'Reward (per completion)', value: `${def.pointRewardPerCompletion ?? task.points ?? 0} points`, inline: true },
-                        { name: 'Max completions / week', value: `${def.maxCompletionsPerWeek ?? task.max ?? 'N/A'}`, inline: true }
-                    )
-                    .setTimestamp();
+                const timeUntilResetMs = oneWeekMs - timeSinceFirstCompletion;
+                const daysUntilReset = Math.floor(timeUntilResetMs / (24 * 60 * 60 * 1000));
+                const hoursUntilReset = Math.floor((timeUntilResetMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                const resetTimeString = `${daysUntilReset} days and ${hoursUntilReset} hours`;
 
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                embed.addFields({
+                    name: taskDef.taskName,
+                    value: `Completions: ${completions} / ${taskDef.maxCompletionsPerWeek} - Resets in: ${resetTimeString}`,
+                    inline: false
+                });
+            }
+            return interaction.editReply({ embeds: [embed] });
+        }
+        else if (subcommand === 'info') {
+            const taskName = interaction.options.getString('taskname');
+            const taskId = taskManager.getTaskIdByName(taskName);
+
+            if (!taskId) {
+                return interaction.editReply(`Task "${taskName}" not found.`);
             }
 
-            return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
-        } catch (err) {
-            console.error('Error executing /task command:', err);
-            if (!interaction.replied) {
-                return interaction.reply({ content: 'There was an error running that command.', ephemeral: true });
+            const taskDef = Object.values(globalValues.taskInfo).find(t => t.taskId === taskId);
+            const taskEntry = profileData.tasks.find(t => t.taskId === taskId);
+            const completions = taskEntry ? taskEntry.completions : 0;
+
+            // Calculate when the task will reset
+            let completionsDisplay = `${completions}`; // FIXED: Store as string separately
+            const firstCompletion = taskEntry ? taskEntry.firstCompletionAt : 0;
+
+            if (firstCompletion !== 0) {
+                const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+                const now = Date.now();
+                const timeSinceFirstCompletion = now - firstCompletion;
+
+                if (timeSinceFirstCompletion < oneWeekMs) {
+                    const timeUntilResetMs = oneWeekMs - timeSinceFirstCompletion;
+                    const daysUntilReset = Math.floor(timeUntilResetMs / (24 * 60 * 60 * 1000));
+                    const hoursUntilReset = Math.floor((timeUntilResetMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                    const resetTimeString = `${daysUntilReset} days and ${hoursUntilReset} hours`;
+                    completionsDisplay = `${completions} / ${taskDef.maxCompletionsPerWeek} (resets in ${resetTimeString})`; // FIXED: Don't modify the number directly
+                }
             }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`📋 Task Info: ${taskDef.taskName} 📋`)
+                .setColor(0x3498DB)
+                .addFields(
+                    { name: 'Task Name', value: taskDef.taskName, inline: false },
+                    { name: 'Completions', value: `${completionsDisplay}`, inline: false },
+                    { name: 'Point Reward', value: `${taskDef.pointRewardPerCompletion} points`, inline: false },
+                )
+                .setTimestamp();
+            return interaction.editReply({ embeds: [embed] });
         }
     },
 };

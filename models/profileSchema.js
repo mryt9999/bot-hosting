@@ -34,6 +34,10 @@ const profileSchema = new mongoose.Schema({
         ],
         default: [],
     },
+
+    //weekly withdrawal tracking
+    weeklyWithdrawAmount: { type: Number, default: 0 },
+    firstWithdrawAt: { type: Number, default: 0 },
 });
 
 // keep the existing model name to avoid breaking references

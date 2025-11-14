@@ -1,50 +1,94 @@
 {
     "dailyMin": 1000,
     "dailyMax": 2000,
+    "maxWithdrawPerWeek": 50000,
+    "maxGlobalWithdrawPerWeek": 200000,
+    "pointsPerGodlyGen": 1,
+    "gensAfterGodly": [
+        "Godly",
+        "Quantum",
+        "Plasma",
+        "Radiant",
+        "Surge",
+        "Chroma",
+        "Blossom",
+        "Absolute"
+    ],
     "taskInfo": [
         {
-            "taskId": 1,
+            "taskId": "1",
             "taskName": "PublicDonation",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 1000
         },
         {
-            "taskId": 2,
+            "taskId": "2",
             "taskName": "ServerDonation",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 3000
         },
         {
-            "taskId": 3,
+            "taskId": "3",
             "taskName": "PublicGiveaway",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 1000
         },
         {
-            "taskId": 4,
+            "taskId": "4",
             "taskName": "ServerGiveaway",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 2000
         },
         {
-            "taskId": 5,
+            "taskId": "5",
             "taskName": "TeamGrinding",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 500
         }
     ],
-    "dailyRolePay": [
+    "maxJobsPerUser": 2,
+    "paidRoleInfo": [
         {
             "roleId": "1437830285319344168",
-            "pointReward": 3000
+            "pointReward": 3000,
+            "jobName": "Executive",
+            "jobDescription": "Helps manage the server, answers questions, and more.",
+            "privateJob": true
+        },
+        {
+            "roleId": "1438641566854938654",
+            "pointReward": 5000,
+            "jobName": "Booster",
+            "jobDescription": "Boosted the server.",
+            "privateJob": true
         },
         {
             "roleId": "1438150897757589514",
-            "pointReward": 2000
+            "pointReward": 2000,
+            "jobName": "Bot Tester",
+            "jobDescription": "Tests the economy bot, and reports any bugs, glitches, improvements and issues.",
+            "privateJob": false
+        },
+        {
+            "roleId": "1438649760075743312",
+            "pointReward": 2000,
+            "jobName": "MemeLord",
+            "jobDescription": "Sends memes in media and other channels.",
+            "privateJob": false
         },
         {
             "roleId": "1438340336056537178",
-            "pointReward": 1500
+            "pointReward": 1500,
+            "jobName": "Blunder Announcer",
+            "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
+            "privateJob": false
+        },
+        {
+            "roleId": "1438648903741214770",
+            "pointReward": 1500,
+            "jobName": "Poll Maker",
+            "jobDescription": "Makes random polls about anything in the poll channel.",
+            "privateJob": false
         },
         {
             "roleId": "1437171794518737088",

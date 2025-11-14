@@ -1,10 +1,23 @@
-const { Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, MessageFlags } = require('discord.js');
-const profileModel = require('../models/profileSchema');
+const { Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, MessageFlags, Collection } = require('discord.js');
+const { Routes } = require('discord-api-types/v10');
+const profileModel = require("../models/profileSchema");
 
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
         ///////////////////////////////
+        if (interaction.isAutocomplete()) {
+            const command = interaction.client.commands.get(interaction.commandName);
+
+            if (!command || !command.autocomplete) return;
+
+            try {
+                await command.autocomplete(interaction);
+            } catch (error) {
+                console.error('Error handling autocomplete:', error);
+            }
+            return;
+        }
 
         //  make this remove ephemeral messages after 30 seconds
         const replyEphemeral = async (options) => {
@@ -12,7 +25,7 @@ module.exports = {
             setTimeout(async () => {
                 try {
                     await interaction.deleteReply();
-                } catch (_err) {
+                } catch (err) {
                     // ignore
                 }
             }, 30000);
@@ -31,7 +44,7 @@ module.exports = {
                     serverID: interaction.guild?.id ?? null,
                 });
             }
-        } catch (_err) {
+        } catch (err) {
             console.log(err);
         }
 
@@ -79,16 +92,16 @@ module.exports = {
                 }
 
                 try {
-                    await cmd.execute(interaction, profileData, { amount, invokedByModal: true, flags: MessageFlags.Ephemeral });
-                } catch (_err) {
+                    // Pass flags to make it ephemeral, and mark as invoked by modal
+                    await cmd.execute(interaction, profileData, {
+                        amount,
+                        invokedByModal: true,
+                        flags: MessageFlags.Ephemeral
+                    });
+                } catch (err) {
                     console.error('Error executing gamble from modal:', err);
-                    try {
-                        await cmd.execute(interaction, profileData, { amount, invokedByModal: true, flags: MessageFlags.Ephemeral });
-                    } catch (err2) {
-                        console.error('Fallback gamble execution also failed:', err2);
-                        if (!interaction.replied) {
-                            return await replyEphemeral({ content: 'Error executing gamble.' });
-                        }
+                    if (!interaction.replied && !interaction.deferred) {
+                        return await replyEphemeral({ content: 'Error executing gamble.' });
                     }
                 }
                 return;
@@ -114,7 +127,7 @@ module.exports = {
                 let targetMember;
                 try {
                     targetMember = await interaction.guild.members.fetch(targetId);
-                } catch (_err) {
+                } catch (err) {
                     console.error('Failed to fetch donate target:', err);
                     return await replyEphemeral({ content: 'Could not find that user in this server. Please try again.' });
                 }
@@ -125,16 +138,16 @@ module.exports = {
                 }
 
                 try {
-                    await cmd.execute(interaction, profileData, { amount, targetId: targetMember.id, invokedByModal: true, flags: MessageFlags.Ephemeral });
-                } catch (_err) {
+                    await cmd.execute(interaction, profileData, {
+                        amount,
+                        targetId: targetMember.id,
+                        invokedByModal: true,
+                        flags: MessageFlags.Ephemeral
+                    });
+                } catch (err) {
                     console.error('Error executing donate from modal:', err);
-                    try {
-                        await cmd.execute(interaction, profileData, { amount, targetId: targetMember.id, invokedByModal: true, flags: MessageFlags.Ephemeral });
-                    } catch (err2) {
-                        console.error('Fallback donate execution also failed:', err2);
-                        if (!interaction.replied) {
-                            return await replyEphemeral({ content: 'Error executing donate.' });
-                        }
+                    if (!interaction.replied && !interaction.deferred) {
+                        return await replyEphemeral({ content: 'Error executing donate.' });
                     }
                 }
                 return;
@@ -145,13 +158,13 @@ module.exports = {
         // Handle regular commands
         if (interaction.isChatInputCommand()) {
             const command = interaction.client.commands.get(interaction.commandName);
-            if (!command) {return;}
+            if (!command) return;
 
             try {
                 await command.execute(interaction, profileData);
             } catch (error) {
                 console.error(error);
-                if (!interaction.replied) {
+                if (!interaction.replied && !interaction.deferred) {
                     await replyEphemeral({
                         content: 'There was an error executing this command!',
                     });
@@ -165,8 +178,7 @@ module.exports = {
             const cmdName = interaction.customId.split(':')[1];
             const command = interaction.client.commands.get(cmdName);
 
-            if (!command) {return;}
-            //interaction.client._lastUserEphemeral.delete(interaction.user.id);
+            if (!command) return;
 
             // Open a modal for gamble so player can enter an amount
             if (cmdName === 'gamble') {
@@ -211,7 +223,7 @@ module.exports = {
                     await command.execute(interaction, profileData, opts);
                 } catch (error) {
                     console.error(error);
-                    if (!interaction.replied) {
+                    if (!interaction.replied && !interaction.deferred) {
                         await replyEphemeral({
                             content: 'Error executing the command!',
                         });

@@ -1,5 +1,5 @@
 const { Events } = require('discord.js');
-const { dailyRolePay } = require('../globalValues.json');
+const { paidRoleInfo } = require('../globalValues.json');
 
 // Map userId -> { channelId, timestamp }
 if (!global.userLastMessageChannel) { global.userLastMessageChannel = new Map(); }
@@ -20,7 +20,7 @@ module.exports = {
                 // list all of the roles
                 let totalPay = 0;
                 const rolesPaidFor = [];
-                for (const rolePay of dailyRolePay) {
+                for (const rolePay of paidRoleInfo) {
                     const roleId = rolePay.roleId;
                     const pointReward = rolePay.pointReward || 0;
                     if (message.member.roles.cache.has(roleId)) {

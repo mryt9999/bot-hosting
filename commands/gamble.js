@@ -18,6 +18,15 @@ module.exports = {
         const flags = callerFlags ? { flags: callerFlags } : {};
         const deferOpts = callerFlags ? { flags: callerFlags } : {};
 
+        if (!opts.invokedByModal) {
+            // Normal slash command - defer as usual
+            const deferOpts = callerFlags ? { flags: callerFlags } : {};
+            await interaction.deferReply(deferOpts);
+        } else {
+            // Modal submit - just reply, don't defer (modal submit is already a response)
+            // The modal interaction is fresh, we can reply directly
+        }
+
         // Determine amount: prefer opts.amount (from modal) otherwise use slash option
         const amount = typeof opts.amount === 'number' ? opts.amount : interaction.options?.getInteger('amount');
         if (!amount || isNaN(amount) || amount <= 0) {
@@ -83,7 +92,7 @@ module.exports = {
                 await interaction.deferReply(deferOpts);
             }
         } catch (_err) {
-            console.error('Failed to defer gamble reply:', err);
+            console.error('Failed to defer gamble reply:', _err);
         }
 
         // 50/50 gamble
@@ -147,7 +156,7 @@ module.exports = {
                 }
             }
         } catch (_err) {
-            console.error('Failed during gamble update/reply:', err);
+            console.error('Failed during gamble update/reply:', _err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ content: 'Error processing gamble.', ...flags });
