@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { paidRoleInfo } = require('../globalValues.json');
+const { updateBalance } = require('../utils/dbUtils');
 
 // Map userId -> { channelId, timestamp }
 if (!global.userLastMessageChannel) { global.userLastMessageChannel = new Map(); }
@@ -34,12 +35,26 @@ module.exports = {
                     }
                 }
                 if (totalPay > 0) {
-                    //add the points to the user's profile
+                    // Update lastDailyRolePay timestamp
                     await profileModel.findOneAndUpdate(
                         { userId: message.author.id },
-                        { $inc: { balance: totalPay }, $set: { lastDailyRolePay: now } },
+                        { $set: { lastDailyRolePay: now } },
                         { new: true }
                     );
+
+                    // Award points using the utility function (which fires the event)
+                    const updateResult = await updateBalance(
+                        message.author.id,
+                        totalPay,
+                        { client: message.client },
+                        { serverId: message.guild?.id ?? null }
+                    );
+
+                    if (!updateResult.success) {
+                        console.error(`Failed to award daily role pay to ${message.author.id}:`, updateResult.reason);
+                        return;
+                    }
+
                     //send all the roles paid for in a message seperated with \n
                     const rolesList = rolesPaidFor.map(roleTable => {
                         for (const [roleMention, points] of roleTable) {

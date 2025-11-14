@@ -1,7 +1,7 @@
 const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const { ArcaneRoleRewards } = require('../globalValues.json');
-const balanceChangeEvent = require('./balanceChange');
+const { updateBalance } = require('../utils/dbUtils');
 
 console.log('ArcaneRoleReward handler loaded');
 
@@ -74,18 +74,28 @@ module.exports = {
                 const pointReward = arcaneReward.pointReward || 0;
                 console.log(`Awarding ${pointReward} points for role ${role.id} to ${newMember.id} (first time claim)`);
 
-                // Update the user's profile: add points AND mark role as claimed
+                // Mark role as claimed first
                 await profileModel.findOneAndUpdate(
                     { userId: newMember.id },
                     {
-                        $inc: { balance: pointReward },
-                        $addToSet: { claimedArcaneRoles: role.id }, // Add role ID to claimed array (prevents duplicates)
+                        $addToSet: { claimedArcaneRoles: role.id },
                         $setOnInsert: { serverID: newMember.guild.id }
                     },
-                    { upsert: true, new: true }
+                    { upsert: true }
                 );
-                // Trigger balanceChange event manually
-                await balanceChangeEvent.execute(newMember);
+
+                // Award points using the utility function (which fires the event)
+                const updateResult = await updateBalance(
+                    newMember.id,
+                    pointReward,
+                    { client: newMember.client },
+                    { serverId: newMember.guild.id }
+                );
+
+                if (!updateResult.success) {
+                    console.error(`Failed to award points for role ${role.id}:`, updateResult.reason);
+                    continue;
+                }
 
                 //send a reply to the user inside the channel where he sent his last message
                 //dont send a dm

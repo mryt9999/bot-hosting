@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const profileModel = require('../models/profileSchema');
-const balanceChangeEvent = require('../events/balanceChange');
 const { transferPoints } = require('../utils/dbUtils');
 
 module.exports = {
@@ -97,7 +96,7 @@ module.exports = {
         // perform the transfer using atomic transaction
         let transferResult;
         try {
-            transferResult = await transferPoints(senderId, targetId, amount);
+            transferResult = await transferPoints(senderId, targetId, amount, { interaction });
         } catch (_err) {
             console.error('Failed to execute transferPoints:', err);
             const msg = 'Failed to complete the donation. Please try again later.';
@@ -139,22 +138,7 @@ module.exports = {
             }
         }
 
-        // Transfer successful - fire balance change events
-        let senderMember;
-        try {
-            senderMember = await interaction.guild.members.fetch(senderId);
-        } catch (_err) {
-            console.error('Failed to fetch sender member for balance change event:', err);
-        }
-        let targetMember;
-        try {
-            targetMember = await interaction.guild.members.fetch(targetId);
-        } catch (_err) {
-            console.error('Failed to fetch target member for balance change event:', err);
-        }
-        balanceChangeEvent.execute(senderMember);
-        balanceChangeEvent.execute(targetMember);
-
+        // Transfer successful - balance change events are already fired by transferPoints
         // Build success embed
         const senderName = interaction.user.username;
         let recipientUser;

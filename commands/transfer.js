@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const globalValues = require('../globalValues.json');
-const profileModel = require('../models/profileSchema');
 const dbUtils = require('../utils/dbUtils');
 const withdrawUtil = require('../utils/withdrawUtil');
 
@@ -499,17 +498,25 @@ async function handleTransferConfirm(interaction, userId, selectedGen, genAmount
 
     // Process withdrawal
     await withdrawUtil.processWithdrawal(totalPoints, profileData);
-    profileData.balance -= totalPoints;
-    await profileData.save();
 
-    // Fire balance change event
-    try {
-        const member = await interaction.guild.members.fetch(userId);
-        const balanceChangeEvent = require('../events/balanceChange');
-        balanceChangeEvent.execute(member);
-    } catch (error) {
-        console.error('Failed to fire balance change event:', error);
+    // Subtract points from balance using utility function
+    const updateResult = await dbUtils.updateBalance(
+        userId,
+        -totalPoints,
+        { interaction },
+        { serverId: interaction.guild?.id ?? null, checkBalance: false }
+    );
+
+    if (!updateResult.success) {
+        return await interaction.followUp({
+            content: `❌ Failed to complete transfer: ${updateResult.reason}`,
+            flags: MessageFlags.Ephemeral
+        });
     }
+
+    // Refresh profile data to get updated balance
+    const profileModel = require('../models/profileSchema');
+    profileData = await profileModel.findOne({ userId });
 
     // Create success embed
     const successEmbed = new EmbedBuilder()

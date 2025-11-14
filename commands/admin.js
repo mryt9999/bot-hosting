@@ -1,9 +1,9 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const profileModel = require('../models/profileSchema');
-const balanceChangeEvent = require('../events/balanceChange');
 const globalValues = require('../globalValues.json');
 const taskManager = require('../utils/taskManager');
 const withdrawUtil = require('../utils/withdrawUtil');
+const { updateBalance, setBalance } = require('../utils/dbUtils');
 
 // Generate task choices from globalValues
 const taskChoices = Object.values(globalValues.taskInfo).map(task => ({
@@ -132,29 +132,16 @@ module.exports = {
             const receiver = interaction.options.getUser('player');
             const amount = interaction.options.getInteger('amount');
 
-            await profileModel.findOneAndUpdate(
-                {
-                    userId: receiver.id
-                },
-                {
-                    $inc: {
-                        balance: amount,
-                    },
-                    $setOnInsert: {
-                        serverID: interaction.guild?.id ?? null
-                    }
-                },
-                { upsert: true }
+            const updateResult = await updateBalance(
+                receiver.id,
+                amount,
+                { interaction },
+                { serverId: interaction.guild?.id ?? null }
             );
-            let targetMember;
-            try {
-                targetMember = await interaction.guild.members.fetch(receiver.id);
-            } catch (err) {
-                console.error('Failed to fetch target member for balance change event:', err);
-            }
-            // FIRE BALANCE CHANGE EVENT
-            if (targetMember) {
-                balanceChangeEvent.execute(targetMember);
+
+            if (!updateResult.success) {
+                await interaction.editReply(`Failed to add points: ${updateResult.reason}`);
+                return;
             }
 
             // Notify owner
@@ -167,29 +154,16 @@ module.exports = {
             const receiver = interaction.options.getUser('player');
             const amount = interaction.options.getInteger('amount');
 
-            await profileModel.findOneAndUpdate(
-                {
-                    userId: receiver.id
-                },
-                {
-                    $inc: {
-                        balance: -amount,
-                    },
-                    $setOnInsert: {
-                        serverID: interaction.guild?.id ?? null
-                    }
-                },
-                { upsert: true }
+            const updateResult = await updateBalance(
+                receiver.id,
+                -amount,
+                { interaction },
+                { serverId: interaction.guild?.id ?? null, checkBalance: false }
             );
-            let targetMember;
-            try {
-                targetMember = await interaction.guild.members.fetch(receiver.id);
-            } catch (err) {
-                console.error('Failed to fetch target member for balance change event:', err);
-            }
-            // FIRE BALANCE CHANGE EVENT
-            if (targetMember) {
-                balanceChangeEvent.execute(targetMember);
+
+            if (!updateResult.success) {
+                await interaction.editReply(`Failed to subtract points: ${updateResult.reason}`);
+                return;
             }
 
             // Notify owner
@@ -205,30 +179,16 @@ module.exports = {
             const profileData = await profileModel.findOne({ userId: receiver.id });
             const previousBalance = profileData ? profileData.balance : 0;
 
-            await profileModel.findOneAndUpdate(
-                {
-                    userId: receiver.id
-                },
-                {
-                    $set: {
-                        balance: 0
-                    },
-                    $setOnInsert: {
-                        serverID: interaction.guild?.id ?? null
-                    }
-                },
-                { upsert: true }
+            const updateResult = await setBalance(
+                receiver.id,
+                0,
+                { interaction },
+                { serverId: interaction.guild?.id ?? null }
             );
 
-            let targetMember;
-            try {
-                targetMember = await interaction.guild.members.fetch(receiver.id);
-            } catch (err) {
-                console.error('Failed to fetch target member for balance change event:', err);
-            }
-            // FIRE BALANCE CHANGE EVENT
-            if (targetMember) {
-                balanceChangeEvent.execute(targetMember);
+            if (!updateResult.success) {
+                await interaction.editReply(`Failed to reset points: ${updateResult.reason}`);
+                return;
             }
 
             // Notify owner
@@ -298,19 +258,19 @@ module.exports = {
                 // Increment completions
                 taskEntry.completions += 1;
 
-                // Award points
-                profileData.balance += taskDef.pointRewardPerCompletion;
-
-                // Save profile
+                // Save profile with task updates
                 await profileData.save();
 
-                // Fire balance change event
-                let targetMember;
-                try {
-                    targetMember = await interaction.guild.members.fetch(receiver.id);
-                    balanceChangeEvent.execute(targetMember);
-                } catch (err) {
-                    console.error('Failed to fetch target member for balance change event:', err);
+                // Award points using the utility function
+                const updateResult = await updateBalance(
+                    receiver.id,
+                    taskDef.pointRewardPerCompletion,
+                    { interaction },
+                    { serverId: interaction.guild?.id ?? null }
+                );
+
+                if (!updateResult.success) {
+                    return await interaction.editReply(`Failed to award points for task: ${updateResult.reason}`);
                 }
 
                 const embed = new EmbedBuilder()
@@ -360,18 +320,20 @@ module.exports = {
                 // Process the withdrawal
                 await withdrawUtil.processWithdrawal(amount, profileData);
 
-                // Subtract points from balance
-                profileData.balance -= amount;
-                await profileData.save();
+                // Subtract points from balance using utility function
+                const updateResult = await updateBalance(
+                    receiver.id,
+                    -amount,
+                    { interaction },
+                    { serverId: interaction.guild?.id ?? null, checkBalance: false }
+                );
 
-                // Fire balance change event
-                let targetMember;
-                try {
-                    targetMember = await interaction.guild.members.fetch(receiver.id);
-                    balanceChangeEvent.execute(targetMember);
-                } catch (err) {
-                    console.error('Failed to fetch target member for balance change event:', err);
+                if (!updateResult.success) {
+                    return await interaction.editReply(`Failed to withdraw points: ${updateResult.reason}`);
                 }
+
+                // Refresh profile data to get updated balance
+                profileData = await profileModel.findOne({ userId: receiver.id });
 
                 await notifyOwner('withdrawfrom', `withdrew ${amount.toLocaleString()} points from ${receiver.tag} (${receiver.id})`);
 
