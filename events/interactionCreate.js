@@ -75,25 +75,47 @@ module.exports = {
             return;
         }
 
-        // Handle string select menus
         if (interaction.isStringSelectMenu()) {
-            if (interaction.customId.startsWith('transfer_gen_select_')) {
-                const userId = interaction.customId.replace('transfer_gen_select_', '');
-                const { handleGenSelect } = require('../commands/transfer');
-                return await handleGenSelect(interaction, userId);
+            // ...existing select menu handlers...
+
+            // Handle transfer select menus
+            if (interaction.customId.startsWith('transfer_')) {
+                const transferCommand = interaction.client.commands.get('transfer');
+                if (transferCommand && transferCommand.handleTransferSelect) {
+                    try {
+                        await transferCommand.handleTransferSelect(interaction);
+                    } catch (error) {
+                        console.error('Error handling transfer select menu:', error);
+                        const replyMethod = interaction.deferred || interaction.replied ? 'followUp' : 'reply';
+                        await interaction[replyMethod]({
+                            content: 'An error occurred while processing your selection.',
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+                }
+                return;
             }
         }
 
         // Handle modal submit for gamble and donate
         if (interaction.isModalSubmit()) {
 
-            // Transfer modal
-            if (interaction.customId.startsWith('transfer_amount_modal_')) {
-                const parts = interaction.customId.replace('transfer_amount_modal_', '').split('_');
-                const userId = parts[0];
-                const selectedGen = parts[1];
-                const { handleTransferAmountModal } = require('../commands/transfer');
-                return await handleTransferAmountModal(interaction, userId, selectedGen);
+            // Handle transfer modals
+            if (interaction.customId.startsWith('transfer_')) {
+                const transferCommand = interaction.client.commands.get('transfer');
+                if (transferCommand && transferCommand.handleTransferModal) {
+                    try {
+                        await transferCommand.handleTransferModal(interaction);
+                    } catch (error) {
+                        console.error('Error handling transfer modal:', error);
+                        const replyMethod = interaction.deferred || interaction.replied ? 'followUp' : 'reply';
+                        await interaction[replyMethod]({
+                            content: 'An error occurred while processing your input.',
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+                }
+                return;
             }
 
             // Gamble modal
@@ -196,19 +218,21 @@ module.exports = {
         if (interaction.isButton()) {
 
             // Handle transfer buttons
-            if (interaction.customId.startsWith('transfer_start_')) {
-                const userId = interaction.customId.replace('transfer_start_', '');
-                const { handleTransferStart } = require('../commands/transfer');
-                return await handleTransferStart(interaction, userId);
-            }
-
-            if (interaction.customId.startsWith('transfer_confirm_')) {
-                const parts = interaction.customId.replace('transfer_confirm_', '').split('_');
-                const userId = parts[0];
-                const selectedGen = parts[1];
-                const genAmount = parts[2];
-                const { handleTransferConfirm } = require('../commands/transfer');
-                return await handleTransferConfirm(interaction, userId, selectedGen, genAmount);
+            if (interaction.customId.startsWith('transfer_')) {
+                const transferCommand = interaction.client.commands.get('transfer');
+                if (transferCommand && transferCommand.handleTransferButton) {
+                    try {
+                        await transferCommand.handleTransferButton(interaction);
+                    } catch (error) {
+                        console.error('Error handling transfer button:', error);
+                        const replyMethod = interaction.deferred || interaction.replied ? 'followUp' : 'reply';
+                        await interaction[replyMethod]({
+                            content: 'An error occurred while processing your request.',
+                            flags: MessageFlags.Ephemeral
+                        });
+                    }
+                }
+                return;
             }
 
             if (interaction.customId.startsWith('transfer_cancel_')) {

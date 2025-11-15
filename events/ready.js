@@ -2,7 +2,7 @@ const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const mongoose = require('mongoose');
 const { roleRequirements } = require('../globalValues.json');
-const { rescheduleActiveLoans, startPendingLoanCleanup } = require('../commands/loan');
+const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans } = require('../commands/loan');
 
 module.exports = {
     name: Events.ClientReady,
@@ -31,6 +31,15 @@ module.exports = {
         } catch (error) {
             console.error('Failed to start pending loan cleanup:', error);
         }
+        // Set up periodic check for overdue loans to auto-repay
+        setInterval(async () => {
+            try {
+                await autoRepayOverdueLoans(client);
+                console.log('Checked for overdue loans requiring auto-repayment');
+            } catch (error) {
+                console.error('Error checking overdue loans:', error);
+            }
+        }, 60 * 60 * 1000); // Every hour
 
 
         // Set up event handler for when members join

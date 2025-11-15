@@ -3,58 +3,60 @@ const globalValues = require('../globalValues.json');
 
 /**
  * Get or create the global withdraw tracking document
- * Uses a singleton pattern with a fixed _id
+ * NOTE: This does NOT call reset - that should be done separately
  */
 async function getGlobalWithdrawData() {
-    try {
-        // Use a simple string as the fixed ID (not ObjectId)
-        const GLOBAL_ID = 'globalWithdraw';
-
-        let globalData = await globalWithdrawModel.findOne({ _id: GLOBAL_ID });
-
-        if (!globalData) {
-            globalData = await globalWithdrawModel.create({
-                _id: GLOBAL_ID,
-                totalWithdrawnThisWeek: 0,
-                temporaryLimitIncrease: 0,
-                weekStartAt: Date.now()
-            });
-        }
-
-        return globalData;
-    } catch (error) {
-        console.error('Error getting global withdraw data:', error);
-        throw error;
+    // findById with fixed ID ensures we always get the same document
+    let data = await globalWithdrawModel.findById('globalWithdraw');
+    if (!data) {
+        // Create with explicit _id to ensure only one document
+        data = await globalWithdrawModel.create({
+            _id: 'globalWithdraw',
+            totalWithdrawnThisWeek: 0,
+            weekStartAt: Date.now(),
+            temporaryLimitIncrease: 0
+        });
     }
+    return data;
 }
 
 /**
- * Reset global withdraw amount if a week has passed
- * @param {Object} globalData - The global withdraw document
+ * Reset global withdraw tracking if a week has passed
+ * Returns true if reset occurred, false otherwise
  */
 function resetGlobalWithdrawIfNeeded(globalWithdrawData) {
     const now = Date.now();
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
     if (now - globalWithdrawData.weekStartAt >= oneWeek) {
+        console.log('[WithdrawUtil] Resetting global withdraw data - week has passed');
         globalWithdrawData.weekStartAt = now;
         globalWithdrawData.totalWithdrawnThisWeek = 0;
         globalWithdrawData.temporaryLimitIncrease = 0; // Reset temporary increase on new week
+        return true; // Reset occurred
     }
+    return false; // No reset
+}
+
+/**
+ * Get the effective withdraw limit for a user (base + custom bonus)
+ */
+function getUserWithdrawLimit(profileData) {
+    const customLimit = profileData.customWithdrawLimit || 0;
+    return globalValues.maxWithdrawPerWeek + customLimit;
 }
 
 /**
  * Check if a withdrawal amount is allowed
- * @param {number} amount - Amount to withdraw
- * @param {Object} userProfile - User's profile document
- * @returns {Object} - { allowed: boolean, reason: string }
  */
 async function canWithdraw(amount, profileData) {
     // Reset user's weekly withdraw if needed
-    resetGlobalWithdrawIfNeeded(profileData);
+    resetWeeklyWithdrawIfNeeded(profileData);
 
-    // Check user-specific withdraw limit
-    const userRemaining = globalValues.maxWithdrawPerWeek - profileData.weeklyWithdrawAmount;
+    // Check user-specific withdraw limit (base + custom bonus)
+    const effectiveUserLimit = getUserWithdrawLimit(profileData);
+    const userRemaining = effectiveUserLimit - profileData.weeklyWithdrawAmount;
+
     if (amount > userRemaining) {
         return {
             allowed: false,
@@ -64,11 +66,27 @@ async function canWithdraw(amount, profileData) {
 
     // Check global withdraw limit
     const globalWithdrawData = await getGlobalWithdrawData();
-    resetGlobalWithdrawIfNeeded(globalWithdrawData);
+    const wasReset = resetGlobalWithdrawIfNeeded(globalWithdrawData);
+
+    // Only save if reset occurred
+    if (wasReset) {
+        await globalWithdrawData.save();
+        console.log('[WithdrawUtil] Global withdraw data was reset and saved');
+    }
 
     // Calculate effective global limit (base + temporary increase)
-    const effectiveGlobalLimit = globalValues.maxGlobalWithdrawPerWeek + globalWithdrawData.temporaryLimitIncrease;
+    const effectiveGlobalLimit = globalValues.maxGlobalWithdrawPerWeek + (globalWithdrawData.temporaryLimitIncrease || 0);
     const globalRemaining = effectiveGlobalLimit - globalWithdrawData.totalWithdrawnThisWeek;
+
+    console.log('[WithdrawUtil] Withdraw check:', {
+        userCustomLimit: profileData.customWithdrawLimit || 0,
+        effectiveUserLimit,
+        userRemaining,
+        temporaryLimitIncrease: globalWithdrawData.temporaryLimitIncrease,
+        effectiveGlobalLimit,
+        globalRemaining,
+        requestedAmount: amount
+    });
 
     if (amount > globalRemaining) {
         return {
@@ -80,41 +98,48 @@ async function canWithdraw(amount, profileData) {
     return { allowed: true };
 }
 
+/**
+ * Reset user's weekly withdraw tracking if a week has passed
+ */
+function resetWeeklyWithdrawIfNeeded(profileData) {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
-// ...existing code...
+    if (profileData.firstWithdrawAt > 0 && now - profileData.firstWithdrawAt >= oneWeek) {
+        profileData.firstWithdrawAt = 0;
+        profileData.weeklyWithdrawAmount = 0;
+    }
+}
 
 /**
- * Process a withdrawal (updates both user and global counters)
- * @param {number} amount - Amount to withdraw
- * @param {Object} userProfile - User's profile document
+ * Process a withdrawal and update tracking
  */
-async function processWithdrawal(amount, userProfile) {
-    // Update user's withdraw tracking
-    if (userProfile.firstWithdrawAt === 0) {
-        userProfile.firstWithdrawAt = Date.now();
+async function processWithdrawal(amount, profileData) {
+    // Update user's weekly withdraw tracking
+    if (profileData.firstWithdrawAt === 0) {
+        profileData.firstWithdrawAt = Date.now();
     }
-    userProfile.weeklyWithdrawAmount += amount;
+    profileData.weeklyWithdrawAmount += amount;
 
-    // Update global withdraw tracking
-    const globalData = await getGlobalWithdrawData();
-    resetGlobalWithdrawIfNeeded(globalData);
-    globalData.totalWithdrawnThisWeek += amount;
-    // if total withdrawn exceeds max, reduce temporary limit increase
-    if (globalData.totalWithdrawnThisWeek > globalValues.maxGlobalWithdrawPerWeek) {
-        globalData.temporaryLimitIncrease -= (globalData.totalWithdrawnThisWeek - globalValues.maxGlobalWithdrawPerWeek);
-        if (globalData.temporaryLimitIncrease < 0) {
-            globalData.temporaryLimitIncrease = 0;
-        }
-    }
+    // Update global weekly withdraw tracking
+    const globalWithdrawData = await getGlobalWithdrawData();
+    globalWithdrawData.totalWithdrawnThisWeek += amount;
+    await globalWithdrawData.save();
 
-    // Save both documents
-    await userProfile.save();
-    await globalData.save();
+    console.log('[WithdrawUtil] Processed withdrawal:', {
+        amount,
+        newUserTotalWithdrawn: profileData.weeklyWithdrawAmount,
+        userCustomLimit: profileData.customWithdrawLimit || 0,
+        newGlobalTotalWithdrawn: globalWithdrawData.totalWithdrawnThisWeek,
+        temporaryLimitIncrease: globalWithdrawData.temporaryLimitIncrease
+    });
 }
 
 module.exports = {
     getGlobalWithdrawData,
     resetGlobalWithdrawIfNeeded,
+    resetWeeklyWithdrawIfNeeded,
+    getUserWithdrawLimit,
     canWithdraw,
     processWithdrawal
 };

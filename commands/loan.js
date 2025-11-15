@@ -924,8 +924,21 @@ function startPendingLoanCleanup(client) {
     }, 60 * 60 * 1000); // 1 hour
 }
 
+// Auto-repay overdue loans when user balance increases
+async function autoRepayOverdueLoans(client) {
+    const overdueLoans = await loanModel.find({
+        status: 'active',
+        dueAt: { $lt: Date.now() }
+    });
+
+    for (const loan of overdueLoans) {
+        await autoRepayLoans(loan.borrowerId, client);
+    }
+}
+
 // Export functions
 module.exports.startPendingLoanCleanup = startPendingLoanCleanup;
 module.exports.rescheduleActiveLoans = rescheduleActiveLoans;
 module.exports.autoRepayLoans = autoRepayLoans;
 module.exports.processLoanAcceptance = processLoanAcceptance;
+module.exports.autoRepayOverdueLoans = autoRepayOverdueLoans;
