@@ -43,6 +43,8 @@ async function transferPoints(senderId, receiverId, amount, context = {}) {
         return { success: false, reason: 'invalid_amount' };
     }
 
+    const { skipAutoRepay = false } = context;
+
     const session = await mongoose.startSession();
     try {
         session.startTransaction();
@@ -68,13 +70,15 @@ async function transferPoints(senderId, receiverId, amount, context = {}) {
 
         await session.commitTransaction();
 
-        // Fire balance change events for both users
-        try {
-            await fireBalanceChangeEvent(senderId, context);
-            await fireBalanceChangeEvent(receiverId, context);
-        } catch (error) {
-            console.error('Failed to fire balance change events after transfer:', error);
-            // Don't fail the transfer if event firing fails
+        // Fire balance change events for both users (only if not skipping auto-repay)
+        if (!skipAutoRepay) {
+            try {
+                await fireBalanceChangeEvent(senderId, context);
+                await fireBalanceChangeEvent(receiverId, context);
+            } catch (error) {
+                console.error('Failed to fire balance change events after transfer:', error);
+                // Don't fail the transfer if event firing fails
+            }
         }
 
         return { success: true, sender, receiver };
@@ -104,12 +108,14 @@ async function transferPoints(senderId, receiverId, amount, context = {}) {
                 { new: true, upsert: true }
             );
 
-            // Fire balance change events for both users
-            try {
-                await fireBalanceChangeEvent(senderId, context);
-                await fireBalanceChangeEvent(receiverId, context);
-            } catch (error) {
-                console.error('Failed to fire balance change events after fallback transfer:', error);
+            // Fire balance change events for both users (only if not skipping auto-repay)
+            if (!skipAutoRepay) {
+                try {
+                    await fireBalanceChangeEvent(senderId, context);
+                    await fireBalanceChangeEvent(receiverId, context);
+                } catch (error) {
+                    console.error('Failed to fire balance change events after fallback transfer:', error);
+                }
             }
 
             return { success: true, sender: fallbackSender, receiver: fallbackReceiver };

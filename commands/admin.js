@@ -4,6 +4,8 @@ const globalValues = require('../globalValues.json');
 const taskManager = require('../utils/taskManager');
 const withdrawUtil = require('../utils/withdrawUtil');
 const { updateBalance, setBalance } = require('../utils/dbUtils');
+const transferModel = require('../models/transferSchema');
+const WITHDRAWAL_LOGS_CHANNEL_ID = process.env.WITHDRAWAL_LOGS_CHANNEL_ID;
 
 // Generate task choices from globalValues
 const taskChoices = Object.values(globalValues.taskInfo).map(task => ({
@@ -104,6 +106,7 @@ module.exports = {
                         .setDescription('The amount to add to the global withdraw limit')
                         .setRequired(true)
                         .setMinValue(1)))
+
         .addSubcommand((subcommand) =>
             subcommand
                 .setName('changewithdrawlimit')
@@ -130,7 +133,17 @@ module.exports = {
                         .setName('reset')
                         .setDescription('Reset to this amount (0 to reset to default)')
                         .setRequired(false)
-                        .setMinValue(0))),
+                        .setMinValue(0)))
+
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('paytransfer')
+                .setDescription('Mark a pending transfer as paid and schedule deletion')
+                .addStringOption((option) =>
+                    option
+                        .setName('transferid')
+                        .setDescription('The transfer ID to mark as paid')
+                        .setRequired(true))),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -451,6 +464,7 @@ module.exports = {
                 await interaction.editReply('An error occurred while increasing the global withdraw limit. Please try again.');
             }
         }
+
         if (adminSubcommand === 'changewithdrawlimit') {
             const receiver = interaction.options.getUser('player');
             const addAmount = interaction.options.getInteger('add');
@@ -563,5 +577,135 @@ module.exports = {
                 await interaction.editReply('An error occurred while changing the withdraw limit. Please try again.');
             }
         }
-    },
+
+        if (adminSubcommand === 'paytransfer') {
+            const transferId = interaction.options.getString('transferid').trim();
+
+            try {
+                // Find the transfer
+                const transfer = await transferModel.findById(transferId);
+
+                if (!transfer) {
+                    return await interaction.editReply(`❌ Transfer with ID \`${transferId}\` not found.`);
+                }
+
+                if (transfer.status !== 'pending') {
+                    return await interaction.editReply(`❌ Transfer \`${transferId}\` is not pending (status: ${transfer.status}).`);
+                }
+
+                // Update transfer status to paid
+                transfer.status = 'paid';
+                transfer.paidAt = new Date();
+                transfer.paidBy = interaction.user.id;
+                await transfer.save();
+
+                // Check if user has any other pending transfers
+                const remainingPendingTransfers = await transferModel.countDocuments({
+                    userId: transfer.userId,
+                    status: 'pending'
+                });
+
+                // Remove pending transfers role from user only if they have no pending transfers left
+                try {
+                    const member = await interaction.guild.members.fetch(transfer.userId);
+
+                    if (remainingPendingTransfers === 0 && member.roles.cache.has(globalValues.pendingTransfersRoleId)) {
+                        await member.roles.remove(globalValues.pendingTransfersRoleId);
+                        console.log(`[Admin] Removed pending transfers role from ${member.user.tag} (no pending transfers remaining)`);
+                    } else if (remainingPendingTransfers > 0) {
+                        console.log(`[Admin] User ${member.user.tag} still has ${remainingPendingTransfers} pending transfer(s), keeping role`);
+                    }
+
+                    // Notify user via DM
+                    try {
+                        await member.send({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setTitle('✅ Transfer Completed!')
+                                    .setColor(0x2ECC71)
+                                    .setDescription('Your transfer has been processed and paid.')
+                                    .addFields(
+                                        { name: 'Items', value: transfer.transferDescription, inline: false },
+                                        { name: 'Points Spent', value: `${transfer.pointsPaid.toLocaleString()} points`, inline: true },
+                                        { name: 'Transfer ID', value: `\`${transfer._id}\``, inline: true }
+                                    )
+                                    .setFooter({ text: 'Thank you for using our transfer system!' })
+                                    .setTimestamp()
+                            ]
+                        });
+                    } catch (dmError) {
+                        console.log(`Could not send DM to user ${transfer.userId}:`, dmError.message);
+                    }
+                } catch (memberError) {
+                    console.error('Failed to check/remove pending transfers role:', memberError);
+                }
+
+                // Schedule deletion after 24 hours
+                setTimeout(async () => {
+                    try {
+                        await transferModel.findByIdAndDelete(transferId);
+                        console.log(`[Admin] Auto-deleted paid transfer ${transferId} after 24 hours`);
+                    } catch (deleteError) {
+                        console.error(`[Admin] Failed to auto-delete transfer ${transferId}:`, deleteError);
+                    }
+                }, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+
+                // Log to withdrawal logs channel
+                const logsChannel = interaction.guild.channels.cache.get(WITHDRAWAL_LOGS_CHANNEL_ID);
+                if (logsChannel) {
+                    // Convert createdAt to timestamp safely
+                    const createdTimestamp = transfer.createdAt instanceof Date
+                        ? Math.floor(transfer.createdAt.getTime() / 1000)
+                        : Math.floor(new Date(transfer.createdAt).getTime() / 1000);
+
+                    const paidTimestamp = Math.floor(transfer.paidAt.getTime() / 1000);
+
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('💰 Transfer Paid')
+                        .setColor(0x2ECC71)
+                        .setDescription('A pending transfer has been marked as paid.')
+                        .addFields(
+                            { name: 'Transfer ID', value: `\`${transfer._id}\``, inline: false },
+                            { name: 'User', value: `<@${transfer.userId}>`, inline: true },
+                            { name: 'Paid By', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: 'Items', value: transfer.transferDescription, inline: false },
+                            { name: 'Points', value: `${transfer.pointsPaid.toLocaleString()} points`, inline: true },
+                            { name: 'Created', value: `<t:${createdTimestamp}:R>`, inline: true },
+                            { name: 'Paid', value: `<t:${paidTimestamp}:R>`, inline: true },
+                            { name: 'Remaining Pending', value: `${remainingPendingTransfers} transfer(s)`, inline: true }
+                        )
+                        .setFooter({ text: 'Transfer will be auto-deleted in 24 hours' })
+                        .setTimestamp();
+
+                    await logsChannel.send({ embeds: [logEmbed] });
+                }
+
+                // Send confirmation to admin
+                const confirmEmbed = new EmbedBuilder()
+                    .setTitle('✅ Transfer Paid Successfully')
+                    .setColor(0x2ECC71)
+                    .setDescription(`Transfer \`${transferId}\` has been marked as paid and will be deleted in 24 hours.`)
+                    .addFields(
+                        { name: 'User', value: `<@${transfer.userId}>`, inline: true },
+                        { name: 'Items', value: transfer.transferDescription, inline: false },
+                        { name: 'Points', value: `${transfer.pointsPaid.toLocaleString()} points`, inline: true },
+                        { name: 'Remaining Pending Transfers', value: `${remainingPendingTransfers}`, inline: true },
+                        { name: 'Role Status', value: remainingPendingTransfers === 0 ? '✅ Role removed' : '⏳ Role kept (has pending transfers)', inline: true }
+                    )
+                    .setFooter({ text: 'User has been notified' })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [confirmEmbed] });
+
+                await notifyOwner(
+                    'paytransfer',
+                    `Paid transfer ${transferId} for user ${transfer.userId}. Items: ${transfer.transferDescription}, Points: ${transfer.pointsPaid.toLocaleString()}. Remaining pending: ${remainingPendingTransfers}`
+                );
+
+            } catch (error) {
+                console.error('Error paying transfer:', error);
+                await interaction.editReply('❌ An error occurred while processing the transfer payment. Please try again.');
+            }
+        }
+    }
 };

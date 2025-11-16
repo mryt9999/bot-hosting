@@ -3,6 +3,7 @@ const profileModel = require('../models/profileSchema');
 const mongoose = require('mongoose');
 const { roleRequirements } = require('../globalValues.json');
 const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans } = require('../commands/loan');
+const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker');
 
 module.exports = {
     name: Events.ClientReady,
@@ -17,6 +18,8 @@ module.exports = {
         }
 
         console.log(`Ready! Logged in as ${client.user.tag}`);
+
+        initializeArcaneRoleChecker(client);
 
         // Reschedule active loans for enforcement
         try {

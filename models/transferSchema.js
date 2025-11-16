@@ -8,7 +8,7 @@ const transferSchema = new mongoose.Schema({
     createdAt: { type: Number, default: Date.now },
     paidAt: { type: Date },
     status: { type: String, enum: ['pending', 'paid', 'defaulted'], default: 'pending' },
-});
+}, { timestamps: true });
 
 
 const model = mongoose.model('transferdb', transferSchema);

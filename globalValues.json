@@ -7,6 +7,8 @@
     "minPointsPerWithdraw": 10000,
     "maxGensPerWithdraw": 50,
     "pointsPerGodlyGen": 1,
+    "pendingTransfersRoleId": "1439387979067162654",
+    "genSupplierRoleId": "1438873118922903663",
     "gensAfterGodly": [
         "Godly",
         "Quantum",

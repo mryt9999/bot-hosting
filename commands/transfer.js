@@ -4,6 +4,8 @@ const dbUtils = require('../utils/dbUtils');
 const withdrawUtil = require('../utils/withdrawUtil');
 const transferModel = require('../models/transferSchema');
 const WITHDRAWALS_LOGS_CHANNEL_ID = process.env.WITHDRAWAL_LOGS_CHANNEL_ID;
+const TRANSFER_EXCHANGE_CHANNEL_ID = process.env.TRANSFER_EXCHANGE_CHANNEL_ID;
+const genSupplierRoleId = globalValues.genSupplierRoleId;
 
 const genChoices = globalValues.gensAfterGodly.map(gen => ({
     name: gen,
@@ -47,7 +49,7 @@ module.exports = {
                         .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
-                .setName('make')
+                .setName('create')
                 .setDescription('Transfer points into gens'))
         .addSubcommand(subcommand =>
             subcommand
@@ -232,7 +234,7 @@ module.exports = {
 
             return await interaction.editReply({ embeds: [embed] });
         }
-        if (subcommand === 'make') {
+        if (subcommand === 'create') {
             if (!profileData) {
                 profileData = await dbUtils.ensureProfile(interaction.user.id, interaction.guild?.id ?? null);
             }
@@ -346,7 +348,6 @@ module.exports = {
     // Export session map and handlers for interactionCreate.js
     transferSessions,
     handleTransferButton,
-    handleTransferSelect,
     handleTransferModal
 };
 
@@ -584,58 +585,6 @@ async function updateTransferListFromMessage(message, sessionId, profileData) {
     await message.edit({ embeds: [embed], components: [row] });
 }
 
-async function handleAddGen(interaction, sessionId) {
-    console.log('[Transfer] handleAddGen called with sessionId:', sessionId);
-    console.log('[Transfer] Active sessions:', Array.from(transferSessions.keys()));
-
-    const session = transferSessions.get(sessionId);
-
-    if (!session) {
-        console.log('[Transfer] Session not found for sessionId:', sessionId);
-        return await interaction.reply({
-            content: '❌ This transfer session has expired or is invalid. Please run `/transfer make` again.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    if (interaction.user.id !== session.userId) {
-        console.log('[Transfer] User mismatch. Expected:', session.userId, 'Got:', interaction.user.id);
-        return await interaction.reply({
-            content: '❌ This transfer session is not for you.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Check if max gens limit reached
-    const totalGens = session.items.reduce((sum, item) => sum + item.amount, 0);
-    if (totalGens >= globalValues.maxGensPerWithdraw) {
-        return await interaction.reply({
-            content: `❌ You have reached the maximum limit of **${globalValues.maxGensPerWithdraw}** gens per transfer. Please remove items or confirm your current transfer.`,
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Create gen selection menu
-    const genSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`transfer_select_${sessionId}`)
-        .setPlaceholder('Select a gen type')
-        .addOptions(
-            globalValues.gensAfterGodly.map(gen => ({
-                label: gen.charAt(0).toUpperCase() + gen.slice(1),
-                value: gen,
-                description: `Add ${gen} gens to your transfer`
-            }))
-        );
-
-    const selectRow = new ActionRowBuilder()
-        .addComponents(genSelectMenu);
-
-    await interaction.reply({
-        content: `**Select which gen to add:** (${totalGens}/${globalValues.maxGensPerWithdraw} gens)`,
-        components: [selectRow],
-        flags: MessageFlags.Ephemeral
-    });
-}
 
 // Centralized handler for all transfer-related buttons
 async function handleTransferButton(interaction) {
@@ -698,7 +647,7 @@ async function handleAddGen(interaction, sessionId) {
     if (!session) {
         console.log('[Transfer] Session not found for sessionId:', sessionId);
         return await interaction.reply({
-            content: `❌ This transfer session has expired or is invalid. Please run \`/transfer make\` again.`,
+            content: '❌ This transfer session has expired or is invalid. Please run `/transfer make` again.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -711,26 +660,62 @@ async function handleAddGen(interaction, sessionId) {
         });
     }
 
-    // Create gen selection menu
-    const genSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`transfer_select_${sessionId}`)
-        .setPlaceholder('Select a gen type')
-        .addOptions(
-            globalValues.gensAfterGodly.map(gen => ({
-                label: gen.charAt(0).toUpperCase() + gen.slice(1),
-                value: gen,
-                description: `Add ${gen} gens to your transfer`
-            }))
+    // Check if max gens limit reached
+    const totalGens = session.items.reduce((sum, item) => sum + item.amount, 0);
+    if (totalGens >= globalValues.maxGensPerWithdraw) {
+        return await interaction.reply({
+            content: `❌ You have reached the maximum limit of **${globalValues.maxGensPerWithdraw}** gens per transfer. Please remove items or confirm your current transfer.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    // Create gen selection buttons (max 5 per row)
+    const rows = [];
+    const gens = globalValues.gensAfterGodly;
+
+    // Split gens into rows of 5 buttons each
+    for (let i = 0; i < gens.length; i += 5) {
+        const rowGens = gens.slice(i, i + 5);
+        const buttons = rowGens.map(gen =>
+            new ButtonBuilder()
+                .setCustomId(`transfer_genselect_${sessionId}_${gen}`)
+                .setLabel(gen.charAt(0).toUpperCase() + gen.slice(1))
+                .setStyle(ButtonStyle.Secondary)
         );
+        rows.push(new ActionRowBuilder().addComponents(buttons));
+    }
 
-    const selectRow = new ActionRowBuilder()
-        .addComponents(genSelectMenu);
+    // Add a back button in the last row
+    const lastRow = rows[rows.length - 1];
+    if (lastRow.components.length < 5) {
+        lastRow.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`transfer_genselect_back_${sessionId}`)
+                .setLabel('Back')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('◀️')
+        );
+    } else {
+        rows.push(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`transfer_genselect_back_${sessionId}`)
+                    .setLabel('Back')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('◀️')
+            )
+        );
+    }
 
-    await interaction.reply({
-        content: '**Select which gen to add:**',
-        components: [selectRow],
-        flags: MessageFlags.Ephemeral
-    });
+    const genEmbed = new EmbedBuilder()
+        .setTitle('💎 Select Gen Type')
+        .setColor(0x9B59B6)
+        .setDescription(`Current gens: **${totalGens}** / **${globalValues.maxGensPerWithdraw}**\n\nSelect which gen type you want to add to your transfer:`)
+        .setFooter({ text: 'Click a gen type below', iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+        .setTimestamp();
+
+    // Update the MAIN message instead of creating ephemeral replies
+    await interaction.update({ embeds: [genEmbed], components: rows });
 }
 
 async function handleGenSelect(interaction, sessionId) {
@@ -773,6 +758,101 @@ async function handleGenSelect(interaction, sessionId) {
 
     await interaction.showModal(modal);
 }
+
+async function handleGenSelectButton(interaction, sessionId, selectedGen) {
+    console.log('[Transfer] handleGenSelectButton called with sessionId:', sessionId, 'gen:', selectedGen);
+
+    const session = transferSessions.get(sessionId);
+
+    if (!session) {
+        console.log('[Transfer] Session not found in handleGenSelectButton');
+        return await interaction.reply({
+            content: '❌ This transfer session has expired or is invalid. Please run `/transfer make` again.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (interaction.user.id !== session.userId) {
+        console.log('[Transfer] User mismatch in handleGenSelectButton');
+        return await interaction.reply({
+            content: '❌ This transfer session is not for you.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    // Show modal to enter amount
+    const modal = new ModalBuilder()
+        .setCustomId(`transfer_modal_${sessionId}_${selectedGen}`)
+        .setTitle(`Add ${selectedGen.charAt(0).toUpperCase() + selectedGen.slice(1)}`);
+
+    const amountInput = new TextInputBuilder()
+        .setCustomId('genAmount')
+        .setLabel('How many gens do you want to add?')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter whole number (e.g., 5)')
+        .setRequired(true);
+
+    const row = new ActionRowBuilder().addComponents(amountInput);
+    modal.addComponents(row);
+
+    await interaction.showModal(modal);
+}
+
+async function handleGenSelectBack(interaction, sessionId) {
+    console.log('[Transfer] handleGenSelectBack called with sessionId:', sessionId);
+
+    const session = transferSessions.get(sessionId);
+
+    if (!session) {
+        console.log('[Transfer] Session not found in handleGenSelectBack');
+        return await interaction.reply({
+            content: '❌ This transfer session has expired or is invalid. Please run `/transfer make` again.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    if (interaction.user.id !== session.userId) {
+        console.log('[Transfer] User mismatch in handleGenSelectBack');
+        return await interaction.reply({
+            content: '❌ This transfer session is not for you.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    // Get user profile and return to main transfer view
+    const profileData = await dbUtils.ensureProfile(session.userId, interaction.guild?.id ?? null);
+    await updateTransferList(interaction, sessionId, profileData);
+}
+
+// Centralized handler for all transfer-related buttons
+async function handleTransferButton(interaction) {
+    const customId = interaction.customId;
+
+    if (customId.startsWith('transfer_add_')) {
+        const sessionId = customId.replace('transfer_add_', '');
+        await handleAddGen(interaction, sessionId);
+    } else if (customId.startsWith('transfer_genselect_back_')) {
+        const sessionId = customId.replace('transfer_genselect_back_', '');
+        await handleGenSelectBack(interaction, sessionId);
+    } else if (customId.startsWith('transfer_genselect_')) {
+        const withoutPrefix = customId.replace('transfer_genselect_', '');
+        const parts = withoutPrefix.split('_');
+        const selectedGen = parts[parts.length - 1];
+        const sessionId = parts.slice(0, -1).join('_');
+        await handleGenSelectButton(interaction, sessionId, selectedGen);
+    } else if (customId.startsWith('transfer_remove_')) {
+        const sessionId = customId.replace('transfer_remove_', '');
+        await handleRemoveItem(interaction, sessionId);
+    } else if (customId.startsWith('transfer_confirm_')) {
+        const sessionId = customId.replace('transfer_confirm_', '');
+        await handleConfirm(interaction, sessionId);
+    } else if (customId.startsWith('transfer_cancel_')) {
+        const userId = customId.replace('transfer_cancel_', '');
+        await handleCancel(interaction, userId);
+    }
+}
+
+// ...existing code...
 
 async function handleAmountModal(interaction, sessionId, selectedGen) {
     console.log('[Transfer] handleAmountModal called with sessionId:', sessionId, 'gen:', selectedGen);
@@ -839,10 +919,7 @@ async function handleAmountModal(interaction, sessionId, selectedGen) {
     // Get user profile
     const profileData = await dbUtils.ensureProfile(session.userId, interaction.guild?.id ?? null);
 
-    // Acknowledge modal
-    await interaction.deferUpdate();
-
-    // Update the original transfer message using stored message ID
+    // Update the original transfer message
     try {
         const channel = await interaction.client.channels.fetch(session.channelId);
         const transferMessage = await channel.messages.fetch(session.messageId);
@@ -850,18 +927,17 @@ async function handleAmountModal(interaction, sessionId, selectedGen) {
         if (transferMessage) {
             await updateTransferListFromMessage(transferMessage, sessionId, profileData);
             console.log('[Transfer] Successfully updated transfer message');
+
+            // Acknowledge the modal by updating the message
+            await interaction.deferUpdate();
         } else {
             console.log('[Transfer] Could not find original transfer message');
+            await interaction.deferUpdate();
         }
     } catch (error) {
         console.error('[Transfer] Error updating original message:', error);
+        await interaction.deferUpdate();
     }
-
-    // Send confirmation
-    await interaction.followUp({
-        content: `✅ Added **${genAmount}x ${selectedGen.charAt(0).toUpperCase() + selectedGen.slice(1)}** (${itemPoints.toLocaleString()} points) to your transfer!\n\nTotal gens: **${newTotalGens}** / **${globalValues.maxGensPerWithdraw}**`,
-        flags: MessageFlags.Ephemeral
-    });
 }
 
 async function handleRemoveItem(interaction, sessionId) {
@@ -1033,6 +1109,35 @@ async function handleConfirm(interaction, sessionId) {
                 .setTimestamp();
 
             logsChannel.send({ embeds: [logEmbed] }).catch(console.error);
+        }
+
+        // Give the user globalValues.pendingTransfersRoleId role
+        try {
+            const member = await interaction.guild.members.fetch(session.userId);
+            await member.roles.add(globalValues.pendingTransfersRoleId);
+
+            // Send a message to the transfer exchange channel
+            const transferExchangeChannel = interaction.guild.channels.cache.get(TRANSFER_EXCHANGE_CHANNEL_ID);
+            if (transferExchangeChannel) {
+                const transferEmbed = new EmbedBuilder()
+                    .setTitle('📦 New Transfer Pending')
+                    .setColor(0xF39C12)
+                    .setDescription(`<@${session.userId}> has submitted a new transfer request.`)
+                    .addFields(
+                        { name: 'Items Requested', value: session.items.map(item => `${item.amount}x ${item.gen.charAt(0).toUpperCase() + item.gen.slice(1)}`).join('\n'), inline: false },
+                        { name: 'Total Points', value: `${session.totalPoints.toLocaleString()} points`, inline: true },
+                        { name: 'Transfer ID', value: `\`${newTransfer._id}\``, inline: true }
+                    )
+                    .setFooter({ text: 'Please process this transfer', iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
+                    .setTimestamp();
+
+                await transferExchangeChannel.send({
+                    content: `<@&${genSupplierRoleId}> - New transfer awaiting processing!\n<@${session.userId}>`,
+                    embeds: [transferEmbed]
+                });
+            }
+        } catch (err) {
+            console.error('Failed to assign pending transfers role or send notification:', err);
         }
 
         // Clean up session

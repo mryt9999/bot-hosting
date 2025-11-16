@@ -734,17 +734,30 @@ async function rescheduleActiveLoans(client) {
     }
 }
 
+const activeAutoRepayments = new Set();
+
 // Auto-repayment function - called when borrower's balance increases
 async function autoRepayLoans(userId, client, guildId) {
+    // Check if auto-repayment is already in progress for this user
+    const repaymentKey = `${userId}_${guildId}`;
+    if (activeAutoRepayments.has(repaymentKey)) {
+        console.log(`[Loan] Auto-repayment already in progress for user ${userId}`);
+        return;
+    }
+
     try {
+        // Mark as in progress
+        activeAutoRepayments.add(repaymentKey);
+
         // Find all overdue loans for this borrower
         const loans = await loanModel.find({
             borrowerId: userId,
-            status: { $in: ['overdue'] }
+            status: { $in: ['overdue', 'active'] },
+            dueAt: { $lt: Date.now() } // Only loans that are actually due
         }).sort({ dueAt: 1 }); // Prioritize loans that are due soonest
 
         if (loans.length === 0) {
-            return; // No active loans
+            return; // No overdue loans
         }
 
         // Get current balance
@@ -765,7 +778,7 @@ async function autoRepayLoans(userId, client, guildId) {
             const amountToRepay = Math.min(availableBalance, remainingAmount);
 
             // Transfer points - need to pass client context
-            const transferResult = await transferPoints(userId, loan.lenderId, amountToRepay, { client });
+            const transferResult = await transferPoints(userId, loan.lenderId, amountToRepay, { client, skipAutoRepay: true });
 
             if (transferResult.success) {
                 availableBalance -= amountToRepay;
@@ -778,6 +791,8 @@ async function autoRepayLoans(userId, client, guildId) {
                     status: isFullyPaid ? 'paid' : loan.status,
                     ...(isFullyPaid && { paidAt: new Date() })
                 });
+
+                console.log(`[Loan] Auto-repaid ${amountToRepay} points for loan ${loan._id}. Fully paid: ${isFullyPaid}`);
 
                 // Log to loan-logs channel
                 const logEmbed = new EmbedBuilder()
@@ -813,12 +828,14 @@ async function autoRepayLoans(userId, client, guildId) {
 
                     if (!isFullyPaid) {
                         embed.addFields({
-                            name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true
+                            name: 'Remaining',
+                            value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`,
+                            inline: true
                         });
+                        embed.setFooter({ text: 'Future earnings will continue to auto-repay until loan is fully paid' });
                     }
 
-                    embed.setFooter({ text: 'Future earnings will continue to auto-repay until loan is fully paid' })
-                        .setTimestamp();
+                    embed.setTimestamp();
 
                     await borrower.send({ embeds: [embed] });
                 } catch (error) {
@@ -848,6 +865,9 @@ async function autoRepayLoans(userId, client, guildId) {
         }
     } catch (error) {
         console.error('Failed to process auto-repayment:', error);
+    } finally {
+        // Remove from active set
+        activeAutoRepayments.delete(repaymentKey);
     }
 }
 
