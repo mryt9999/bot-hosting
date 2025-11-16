@@ -177,10 +177,11 @@ module.exports = {
                 profileData = await dbUtils.ensureProfile(targetUser.id, interaction.guild?.id ?? null);
             }
 
-            await withdrawUtil.canWithdraw(0, profileData);
+            await withdrawUtil.canWithdraw(0, profileData, interaction.member);
 
             // Use the helper function to get effective limit
-            const effectiveUserLimit = withdrawUtil.getUserWithdrawLimit(profileData);
+            const member = await interaction.guild.members.fetch(targetUser.id);
+            const effectiveUserLimit = withdrawUtil.getUserWithdrawLimit(profileData, member);
             const customBonus = profileData.customWithdrawLimit || 0;
             const remaining = effectiveUserLimit - profileData.weeklyWithdrawAmount;
             const resetTimestamp = profileData.firstWithdrawAt === 0
@@ -194,25 +195,25 @@ module.exports = {
                 .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }));
 
             // Add base limit and custom bonus fields if there's a custom limit
-            if (customBonus !== 0) {
-                embed.addFields(
-                    {
-                        name: 'Base Weekly Limit',
-                        value: `${globalValues.maxWithdrawPerWeek.toLocaleString()} points`,
-                        inline: true
-                    },
-                    {
-                        name: 'Custom Bonus',
-                        value: `${customBonus > 0 ? '+' : ''}${customBonus.toLocaleString()} points`,
-                        inline: true
-                    },
-                    {
-                        name: 'Total Limit',
-                        value: `${effectiveUserLimit.toLocaleString()} points`,
-                        inline: true
-                    }
-                );
-            }
+            /* {            if (customBonus !== 0) {
+                            embed.addFields(
+                                {
+                                    name: 'Base Weekly Limit',
+                                    value: `${globalValues.maxWithdrawPerWeek.toLocaleString()} points`,
+                                    inline: true
+                                },
+                                {
+                                    name: 'Custom Bonus',
+                                    value: `${customBonus > 0 ? '+' : ''}${customBonus.toLocaleString()} points`,
+                                    inline: true
+                                },
+                                {
+                                    name: 'Total Limit',
+                                    value: `${effectiveUserLimit.toLocaleString()} points`,
+                                    inline: true
+                                }
+                            );
+                        }} */
 
             embed.addFields(
                 {
@@ -239,10 +240,13 @@ module.exports = {
                 profileData = await dbUtils.ensureProfile(interaction.user.id, interaction.guild?.id ?? null);
             }
 
-            const canWithdrawResult = await withdrawUtil.canWithdraw(globalValues.minPointsPerWithdraw, profileData);
-            if (!canWithdrawResult.allowed) {
+            // Check withdraw limits (pass member for job bonus calculation)
+            const withdrawCheck = await withdrawUtil.canWithdraw(pointCost, profileData, interaction.member);
+
+            if (!withdrawCheck.allowed) {
                 return await interaction.editReply({
-                    content: `❌ Cannot create transfer: ${canWithdrawResult.reason}`,
+                    content: `❌ ${withdrawCheck.reason}`,
+                    flags: [MessageFlags.Ephemeral]
                 });
             }
 

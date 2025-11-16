@@ -39,22 +39,38 @@ function resetGlobalWithdrawIfNeeded(globalWithdrawData) {
 }
 
 /**
- * Get the effective withdraw limit for a user (base + custom bonus)
+ * Get the effective withdraw limit for a user (base + custom bonus + job bonuses)
+ * @param {Object} profileData - User profile data
+ * @param {Object} member - Discord guild member (optional, for job role checking)
  */
-function getUserWithdrawLimit(profileData) {
+function getUserWithdrawLimit(profileData, member = null) {
     const customLimit = profileData.customWithdrawLimit || 0;
-    return globalValues.maxWithdrawPerWeek + customLimit;
+    let jobBonusLimit = 0;
+
+    // Calculate total job bonus if member is provided
+    if (member) {
+        for (const job of globalValues.paidRoleInfo) {
+            if (job.extraWithdrawLimit && member.roles.cache.has(job.roleId)) {
+                jobBonusLimit += job.extraWithdrawLimit;
+            }
+        }
+    }
+
+    return globalValues.maxWithdrawPerWeek + customLimit + jobBonusLimit;
 }
 
 /**
  * Check if a withdrawal amount is allowed
+ * @param {number} amount - Amount to withdraw
+ * @param {Object} profileData - User profile data
+ * @param {Object} member - Discord guild member (optional, for job role checking)
  */
-async function canWithdraw(amount, profileData) {
+async function canWithdraw(amount, profileData, member = null) {
     // Reset user's weekly withdraw if needed
     resetWeeklyWithdrawIfNeeded(profileData);
 
-    // Check user-specific withdraw limit (base + custom bonus)
-    const effectiveUserLimit = getUserWithdrawLimit(profileData);
+    // Check user-specific withdraw limit (base + custom bonus + job bonuses)
+    const effectiveUserLimit = getUserWithdrawLimit(profileData, member);
     const userRemaining = effectiveUserLimit - profileData.weeklyWithdrawAmount;
 
     if (amount > userRemaining) {

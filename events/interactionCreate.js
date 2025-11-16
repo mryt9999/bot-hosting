@@ -78,6 +78,33 @@ module.exports = {
         if (interaction.isStringSelectMenu()) {
             // ...existing select menu handlers...
 
+
+
+            if (interaction.customId === 'help_command_select') {
+                const commandName = interaction.values[0];
+                const command = interaction.client.commands.get(commandName);
+
+                if (!command) {
+                    return await interaction.update({
+                        content: '❌ Command not found.',
+                        embeds: [],
+                        components: []
+                    });
+                }
+
+                const { createCommandDetailEmbed, createCommandSelectMenu, createBackButton } = require('../commands/help');
+                const detailEmbed = createCommandDetailEmbed(command, interaction);
+                const selectMenu = createCommandSelectMenu(interaction);
+                const backButton = createBackButton();
+
+                await interaction.update({
+                    embeds: [detailEmbed],
+                    components: [selectMenu, backButton]
+                });
+            }
+
+
+
             // Handle transfer select menus
             if (interaction.customId.startsWith('transfer_')) {
                 const transferCommand = interaction.client.commands.get('transfer');
@@ -216,6 +243,19 @@ module.exports = {
 
         // Handle button interactions
         if (interaction.isButton()) {
+
+
+            // Help back button
+            if (interaction.customId === 'help_back_to_list') {
+                const { createMainHelpEmbed, createCommandSelectMenu } = require('../commands/help');
+                const mainEmbed = createMainHelpEmbed(interaction);
+                const selectMenu = createCommandSelectMenu(interaction);
+
+                await interaction.update({
+                    embeds: [mainEmbed],
+                    components: [selectMenu]
+                });
+            }
 
             // Handle transfer buttons
             if (interaction.customId.startsWith('transfer_')) {

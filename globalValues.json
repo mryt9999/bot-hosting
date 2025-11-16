@@ -58,41 +58,55 @@
             "pointReward": 3000,
             "jobName": "Executive",
             "jobDescription": "Helps manage the server, answers questions, and more.",
-            "privateJob": true
+            "privateJob": false,
+            "extraWithdrawLimit": 10000,
+            "levelRequirement": 30
         },
         {
             "roleId": "1438641566854938654",
             "pointReward": 5000,
             "jobName": "Booster",
             "jobDescription": "Boosted the server.",
-            "privateJob": true
+            "privateJob": true,
+            "extraWithdrawLimit": 10000
         },
         {
             "roleId": "1438150897757589514",
-            "pointReward": 2000,
+            "pointReward": 2500,
             "jobName": "Bot Tester",
             "jobDescription": "Tests the economy bot, and reports any bugs, glitches, improvements and issues.",
-            "privateJob": false
+            "privateJob": false,
+            "levelRequirement": 20
         },
         {
             "roleId": "1438649760075743312",
             "pointReward": 2000,
             "jobName": "MemeLord",
             "jobDescription": "Sends memes in media and other channels.",
-            "privateJob": false
+            "privateJob": false,
+            "levelRequirement": 15
         },
         {
             "roleId": "1438340336056537178",
             "pointReward": 1500,
             "jobName": "Blunder Announcer",
             "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
-            "privateJob": false
+            "privateJob": false,
+            "levelRequirement": 10
         },
         {
             "roleId": "1438648903741214770",
             "pointReward": 1500,
             "jobName": "Poll Maker",
             "jobDescription": "Makes random polls about anything in the poll channel.",
+            "privateJob": false,
+            "levelRequirement": 5
+        },
+        {
+            "roleId": "1439740356521361448",
+            "pointReward": 1000,
+            "jobName": "Greeter",
+            "jobDescription": "Greets new members.",
             "privateJob": false
         },
         {
@@ -149,63 +163,78 @@
     "ArcaneRoleRewards": [
         {
             "roleId": "1437847861499924552",
-            "pointReward": 1000
+            "pointReward": 1000,
+            "level": 5
         },
         {
             "roleId": "1437848006501077032",
-            "pointReward": 3000
+            "pointReward": 3000,
+            "level": 10
         },
         {
             "roleId": "1437848075694641252",
-            "pointReward": 7000
+            "pointReward": 7000,
+            "level": 15
         },
         {
             "roleId": "1437848150604906577",
-            "pointReward": 10000
+            "pointReward": 10000,
+            "level": 20
         },
         {
             "roleId": "1437848238622507141",
-            "pointReward": 15000
+            "pointReward": 15000,
+            "level": 25
         },
         {
             "roleId": "1437848349003874334",
-            "pointReward": 20000
+            "pointReward": 20000,
+            "level": 30
         },
         {
             "roleId": "1437848402825187359",
-            "pointReward": 25000
+            "pointReward": 25000,
+            "level": 35
         },
         {
             "roleId": "1437848465387290854",
-            "pointReward": 30000
+            "pointReward": 30000,
+            "level": 40
         },
         {
             "roleId": "1437848508739879012",
-            "pointReward": 35000
+            "pointReward": 35000,
+            "level": 45
         },
         {
             "roleId": "1437848581783556096",
-            "pointReward": 50000
+            "pointReward": 50000,
+            "level": 50
         },
         {
             "roleId": "1437848677296378008",
-            "pointReward": 100000
+            "pointReward": 100000,
+            "level": 60
         },
         {
             "roleId": "1437849897767276654",
-            "pointReward": 200000
+            "pointReward": 200000,
+            "level": 70
         },
         {
             "roleId": "1437849941987823807",
-            "pointReward": 300000
+            "pointReward": 300000,
+            "level": 80
         },
         {
             "roleId": "1437849976121065584",
-            "pointReward": 500000
+            "pointReward": 500000,
+            "level": 90
         },
         {
             "roleId": "1437850008799019088",
-            "pointReward": 1000000
+            "pointReward": 1000000,
+            "level": 100
         }
     ]
 }
