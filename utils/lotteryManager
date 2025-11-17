@@ -1,0 +1,691 @@
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const lotteryModel = require('../models/lotterySchema');
+const lotteryCooldownModel = require('../models/lotteryCooldownSchema');
+const dbUtils = require('../utils/dbUtils');
+
+const LOTTERIES_CHANNEL_ID = process.env.LOTTERIES_CHANNEL_ID;
+const LOTTERY_LOGS_CHANNEL_ID = process.env.LOTTERY_LOGS_CHANNEL_ID;
+
+const NUMBER_LOTTERY_COST = 100;
+const NUMBER_LOTTERY_MAX = 1000;
+const NUMBER_LOTTERY_COOLDOWN = 4 * 60 * 60 * 1000; // 4 hours
+
+const RAFFLE_LOTTERY_COST = 1000;
+const RAFFLE_LOTTERY_STARTING_POOL = 10000;
+const RAFFLE_LOTTERY_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const RAFFLE_LOTTERY_COOLDOWN = 8 * 60 * 60 * 1000; // 8 hours
+
+function createLotteryEmbed(lottery, ended = false) {
+    const isNumber = lottery.type === 'number';
+    const embed = new EmbedBuilder()
+        .setColor(ended ? 0x95A5A6 : 0xF39C12)
+        .setTimestamp();
+
+    if (isNumber) {
+        embed.setTitle('🎲 Number Draw Lottery (1-1000)')
+            .setDescription(
+                ended
+                    ? '**This lottery has ended.**'
+                    : 'Test your luck! draw random numbers, 1 is correct.'
+            )
+            .addFields(
+                { name: '💰 Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                { name: '🎯 Numbers Used', value: `${lottery.usedNumbers.length}/${NUMBER_LOTTERY_MAX}`, inline: true },
+                { name: '💳 Entry Cost', value: `${NUMBER_LOTTERY_COST} points per draw`, inline: true },
+                { name: '🎰 How to Play', value: 'Click "Buy Draw" to get a random number. Check the thread below for all draws!', inline: false }
+            );
+
+        if (lottery.winnerId) {
+            embed.addFields({
+                name: '🏆 Winner',
+                value: `<@${lottery.winnerId}> won with number **${lottery.participants.find(p => p.userId === lottery.winnerId)?.number}**!`,
+                inline: false
+            });
+        }
+    } else {
+        embed.setTitle('🎟️ Raffle Lottery (24 Hour)')
+            .setDescription(
+                ended
+                    ? '**This lottery has ended.**'
+                    : 'Enter for a chance to win! One entry per person.'
+            )
+            .addFields(
+                { name: '💰 Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                { name: '👥 Participants', value: `${lottery.participants.length}`, inline: true },
+                { name: '💳 Entry Cost', value: `${RAFFLE_LOTTERY_COST} points (one entry)`, inline: true }
+            );
+
+        if (!ended) {
+            embed.addFields({
+                name: '⏰ Ends',
+                value: `<t:${Math.floor(lottery.endsAt / 1000)}:R>`,
+                inline: false
+            });
+        }
+
+        embed.addFields({
+            name: '🎰 How to Play',
+            value: 'Click "Enter Raffle" to participate. Check the thread below for all entries!',
+            inline: false
+        });
+
+        if (lottery.winnerId) {
+            embed.addFields({
+                name: '🏆 Winner',
+                value: `<@${lottery.winnerId}> won the raffle!`,
+                inline: false
+            });
+        }
+    }
+
+    return embed;
+}
+
+function createLotteryButtons(lotteryId, type) {
+    const button = new ButtonBuilder()
+        .setCustomId(`lottery_${type}_${lotteryId}`)
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🎰');
+
+    if (type === 'number') {
+        button.setLabel(`Buy Draw (${NUMBER_LOTTERY_COST} points)`);
+    } else {
+        button.setLabel(`Enter Raffle (${RAFFLE_LOTTERY_COST} points)`);
+    }
+
+    return new ActionRowBuilder().addComponents(button);
+}
+
+async function createNumberLottery(client, guildId) {
+    // Check cooldown
+    const cooldown = await lotteryCooldownModel.findOne({
+        serverID: guildId,
+        type: 'number'
+    });
+
+    if (cooldown && Date.now() < cooldown.nextAvailableAt) {
+        return null;
+    }
+
+    // Check if there's already an active lottery
+    const existingLottery = await lotteryModel.findOne({
+        serverID: guildId,
+        type: 'number',
+        status: 'active'
+    });
+
+    if (existingLottery) {
+        return null;
+    }
+
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+        return null;
+    }
+
+    // Create the lottery
+    const lotteryData = {
+        serverID: guildId,
+        type: 'number',
+        status: 'active',
+        prizePool: 0,
+        startedAt: Date.now(),
+        channelId: LOTTERIES_CHANNEL_ID,
+        winningNumber: Math.floor(Math.random() * NUMBER_LOTTERY_MAX) + 1,
+        usedNumbers: [],
+        participants: []
+    };
+
+    const lottery = await lotteryModel.create(lotteryData);
+
+    // Post to lotteries channel
+    const channel = guild.channels.cache.get(LOTTERIES_CHANNEL_ID);
+    if (channel) {
+        const embed = createLotteryEmbed(lottery);
+        const buttons = createLotteryButtons(lottery._id, 'number');
+
+        const message = await channel.send({ embeds: [embed], components: [buttons] });
+
+        // Update lottery with message ID
+        lottery.messageId = message.id;
+
+        // Create thread on the lottery message itself
+        try {
+            const thread = await message.startThread({
+                name: `🎲 Draws - ${lottery._id.toString().slice(-6)}`,
+                autoArchiveDuration: 1440, // Archive after 24 hours of inactivity
+                reason: 'Number Draw Lottery thread'
+            });
+
+            lottery.logThreadId = thread.id;
+
+            // Send initial message to thread
+            const initialEmbed = new EmbedBuilder()
+                .setTitle('🎲 Number Draw Lottery')
+                .setColor(0xF39C12)
+                .setDescription('All draws for this lottery will be logged here.')
+                .addFields(
+                    { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: true },
+                    { name: 'Entry Cost', value: `${NUMBER_LOTTERY_COST} points per draw`, inline: true },
+                    { name: 'Started', value: `<t:${Math.floor(lottery.startedAt / 1000)}:F>`, inline: false }
+                )
+                .setTimestamp();
+
+            await thread.send({ embeds: [initialEmbed] });
+        } catch (error) {
+            console.error('Failed to create lottery thread:', error);
+        }
+
+        await lottery.save();
+        console.log(`[Lottery] Created Number Draw lottery: ${lottery._id}`);
+    }
+
+    return lottery;
+}
+
+async function createRaffleLottery(client, guildId) {
+    // Check cooldown
+    const cooldown = await lotteryCooldownModel.findOne({
+        serverID: guildId,
+        type: 'raffle'
+    });
+
+    if (cooldown && Date.now() < cooldown.nextAvailableAt) {
+        return null;
+    }
+
+    // Check if there's already an active lottery
+    const existingLottery = await lotteryModel.findOne({
+        serverID: guildId,
+        type: 'raffle',
+        status: 'active'
+    });
+
+    if (existingLottery) {
+        return null;
+    }
+
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+        return null;
+    }
+
+    // Create the lottery
+    const lotteryData = {
+        serverID: guildId,
+        type: 'raffle',
+        status: 'active',
+        prizePool: RAFFLE_LOTTERY_STARTING_POOL,
+        startedAt: Date.now(),
+        endsAt: Date.now() + RAFFLE_LOTTERY_DURATION,
+        channelId: LOTTERIES_CHANNEL_ID,
+        participants: []
+    };
+
+    const lottery = await lotteryModel.create(lotteryData);
+
+    // Post to lotteries channel
+    const channel = guild.channels.cache.get(LOTTERIES_CHANNEL_ID);
+    if (channel) {
+        const embed = createLotteryEmbed(lottery);
+        const buttons = createLotteryButtons(lottery._id, 'raffle');
+
+        const message = await channel.send({ embeds: [embed], components: [buttons] });
+
+        // Update lottery with message ID
+        lottery.messageId = message.id;
+
+        // Create thread on the lottery message itself
+        try {
+            const thread = await message.startThread({
+                name: `🎟️ Entries - ${lottery._id.toString().slice(-6)}`,
+                autoArchiveDuration: 1440, // Archive after 24 hours of inactivity
+                reason: 'Raffle Lottery thread'
+            });
+
+            lottery.logThreadId = thread.id;
+
+            // Send initial message to thread
+            const initialEmbed = new EmbedBuilder()
+                .setTitle('🎟️ Raffle Lottery')
+                .setColor(0xF39C12)
+                .setDescription('All entries for this raffle will be logged here.')
+                .addFields(
+                    { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: true },
+                    { name: 'Entry Cost', value: `${RAFFLE_LOTTERY_COST} points`, inline: true },
+                    { name: 'Starting Pool', value: `${RAFFLE_LOTTERY_STARTING_POOL.toLocaleString()} points`, inline: true },
+                    { name: 'Started', value: `<t:${Math.floor(lottery.startedAt / 1000)}:F>`, inline: true },
+                    { name: 'Ends', value: `<t:${Math.floor(lottery.endsAt / 1000)}:R>`, inline: true }
+                )
+                .setTimestamp();
+
+            await thread.send({ embeds: [initialEmbed] });
+        } catch (error) {
+            console.error('Failed to create lottery thread:', error);
+        }
+
+        await lottery.save();
+
+        // Schedule raffle end
+        scheduleRaffleEnd(lottery._id, lottery.endsAt, client);
+
+        console.log(`[Lottery] Created Raffle lottery: ${lottery._id}`);
+    }
+
+    return lottery;
+}
+
+async function endNumberLottery(lottery, client, guild, winnerId, winningNumber) {
+    // Mark as ended
+    lottery.status = 'ended';
+    lottery.winnerId = winnerId;
+    await lottery.save();
+
+    // Award prize to winner
+    const winnerProfile = await dbUtils.ensureProfile(winnerId, guild.id);
+    winnerProfile.balance += lottery.prizePool;
+    await winnerProfile.save();
+
+    // Trigger balance change event
+    try {
+        const balanceChangeEvent = require('../events/balanceChange');
+        const member = await guild.members.fetch(winnerId);
+        balanceChangeEvent.execute(member);
+    } catch (err) {
+        console.error('Failed to trigger balance change event:', err);
+    }
+
+    // Update message
+    const channel = guild.channels.cache.get(lottery.channelId);
+    if (channel && lottery.messageId) {
+        try {
+            const message = await channel.messages.fetch(lottery.messageId);
+            const embed = createLotteryEmbed(lottery, true);
+            await message.edit({ embeds: [embed], components: [] });
+        } catch (error) {
+            console.error('Failed to update lottery message:', error);
+        }
+    }
+
+    // Log winner to thread
+    if (lottery.logThreadId) {
+        try {
+            const thread = await client.channels.fetch(lottery.logThreadId);
+            if (thread) {
+                const logEmbed = new EmbedBuilder()
+                    .setTitle('🎉 Number Draw Lottery Winner!')
+                    .setColor(0x2ECC71)
+                    .addFields(
+                        { name: 'Winner', value: `<@${winnerId}>`, inline: true },
+                        { name: 'Winning Number', value: `${winningNumber}`, inline: true },
+                        { name: 'Prize Won', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                        { name: 'Total Draws', value: `${lottery.usedNumbers.length}`, inline: true },
+                        { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: false }
+                    )
+                    .setTimestamp();
+
+                await thread.send({
+                    content: `<@${winnerId}> 🎉 **CONGRATULATIONS! YOU WON!**`,
+                    embeds: [logEmbed]
+                });
+
+                // Archive thread after 5 seconds
+                setTimeout(async () => {
+                    try {
+                        await thread.setArchived(true);
+                    } catch (error) {
+                        console.error('Failed to archive thread:', error);
+                    }
+                }, 5000);
+            }
+        } catch (error) {
+            console.error('Failed to send winner message to thread:', error);
+        }
+    }
+
+    // After 1 hour: delete embed from lotteries channel and post copy to lottery-logs
+    setTimeout(async () => {
+        try {
+            const lotteryChannel = guild.channels.cache.get(lottery.channelId);
+            const logsChannel = guild.channels.cache.get(LOTTERY_LOGS_CHANNEL_ID);
+
+            if (lotteryChannel && lottery.messageId) {
+                try {
+                    const message = await lotteryChannel.messages.fetch(lottery.messageId);
+
+                    // Create archive embed for lottery-logs channel
+                    if (logsChannel) {
+                        const archiveEmbed = new EmbedBuilder()
+                            .setTitle('🎲 Number Draw Lottery - Archived')
+                            .setColor(0x95A5A6)
+                            .setDescription('This lottery has ended and been archived.')
+                            .addFields(
+                                { name: '💰 Final Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                                { name: '🎯 Numbers Used', value: `${lottery.usedNumbers.length}/${NUMBER_LOTTERY_MAX}`, inline: true },
+                                { name: '🏆 Winner', value: `<@${winnerId}>`, inline: true },
+                                { name: '🎲 Winning Number', value: `${winningNumber}`, inline: true },
+                                { name: '📅 Started', value: `<t:${Math.floor(lottery.startedAt / 1000)}:F>`, inline: true },
+                                { name: '🏁 Ended', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                                { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: false }
+                            )
+                            .setTimestamp();
+
+                        await logsChannel.send({ embeds: [archiveEmbed] });
+                    }
+
+                    // Delete the original message from lotteries channel
+                    await message.delete();
+                    console.log(`[Lottery] Deleted and archived lottery message: ${lottery._id}`);
+                } catch (error) {
+                    console.error('Failed to delete/archive lottery message:', error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to process lottery archival:', error);
+        }
+    }, 60 * 60 * 1000); // 1 hour
+
+    // Set cooldown
+    await lotteryCooldownModel.findOneAndUpdate(
+        { serverID: guild.id, type: 'number' },
+        { nextAvailableAt: Date.now() + NUMBER_LOTTERY_COOLDOWN },
+        { upsert: true }
+    );
+
+    // Delete lottery from database after 65 minutes (5 min after archival)
+    setTimeout(async () => {
+        try {
+            await lotteryModel.findByIdAndDelete(lottery._id);
+            console.log(`[Lottery] Deleted completed Number Draw lottery from database: ${lottery._id}`);
+        } catch (error) {
+            console.error('Failed to delete completed lottery:', error);
+        }
+    }, 65 * 60 * 1000);
+
+    // Auto-create new lottery after cooldown
+    setTimeout(async () => {
+        await createNumberLottery(client, guild.id);
+    }, NUMBER_LOTTERY_COOLDOWN);
+}
+
+async function endRaffleLottery(lottery, client, guild) {
+    if (lottery.participants.length === 0) {
+        // No participants, just end it
+        lottery.status = 'ended';
+        await lottery.save();
+
+        const channel = guild.channels.cache.get(lottery.channelId);
+        if (channel && lottery.messageId) {
+            try {
+                const message = await channel.messages.fetch(lottery.messageId);
+                const embed = new EmbedBuilder()
+                    .setTitle('🎟️ Raffle Lottery Ended')
+                    .setDescription('No participants. Lottery cancelled.')
+                    .setColor(0x95A5A6)
+                    .setTimestamp();
+                await message.edit({ embeds: [embed], components: [] });
+            } catch (error) {
+                console.error('Failed to update lottery message:', error);
+            }
+        }
+
+        // Log to thread
+        if (lottery.logThreadId) {
+            try {
+                const thread = await client.channels.fetch(lottery.logThreadId);
+                if (thread) {
+                    const cancelEmbed = new EmbedBuilder()
+                        .setTitle('❌ Raffle Cancelled')
+                        .setDescription('No participants joined this raffle.')
+                        .setColor(0x95A5A6)
+                        .setTimestamp();
+
+                    await thread.send({ embeds: [cancelEmbed] });
+
+                    // Archive thread immediately
+                    setTimeout(async () => {
+                        try {
+                            await thread.setArchived(true);
+                        } catch (error) {
+                            console.error('Failed to archive thread:', error);
+                        }
+                    }, 5000);
+                }
+            } catch (error) {
+                console.error('Failed to send cancellation to thread:', error);
+            }
+        }
+
+        // After 1 hour: delete embed from lotteries channel and post copy to lottery-logs
+        setTimeout(async () => {
+            try {
+                const lotteryChannel = guild.channels.cache.get(lottery.channelId);
+                const logsChannel = guild.channels.cache.get(LOTTERY_LOGS_CHANNEL_ID);
+
+                if (lotteryChannel && lottery.messageId) {
+                    try {
+                        const message = await lotteryChannel.messages.fetch(lottery.messageId);
+
+                        // Create archive embed for lottery-logs channel
+                        if (logsChannel) {
+                            const archiveEmbed = new EmbedBuilder()
+                                .setTitle('🎟️ Raffle Lottery - Archived (Cancelled)')
+                                .setColor(0x95A5A6)
+                                .setDescription('This raffle was cancelled due to no participants.')
+                                .addFields(
+                                    { name: '📅 Started', value: `<t:${Math.floor(lottery.startedAt / 1000)}:F>`, inline: true },
+                                    { name: '🏁 Cancelled', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                                    { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: false }
+                                )
+                                .setTimestamp();
+
+                            await logsChannel.send({ embeds: [archiveEmbed] });
+                        }
+
+                        // Delete the original message
+                        await message.delete();
+                        console.log(`[Lottery] Deleted and archived cancelled raffle message: ${lottery._id}`);
+                    } catch (error) {
+                        console.error('Failed to delete/archive raffle message:', error);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to process raffle archival:', error);
+            }
+        }, 60 * 60 * 1000); // 1 hour
+
+        // Set cooldown
+        await lotteryCooldownModel.findOneAndUpdate(
+            { serverID: guild.id, type: 'raffle' },
+            { nextAvailableAt: Date.now() + RAFFLE_LOTTERY_COOLDOWN },
+            { upsert: true }
+        );
+
+        // Delete lottery from database after 65 minutes
+        setTimeout(async () => {
+            try {
+                await lotteryModel.findByIdAndDelete(lottery._id);
+                console.log(`[Lottery] Deleted cancelled Raffle lottery from database: ${lottery._id}`);
+            } catch (error) {
+                console.error('Failed to delete completed lottery:', error);
+            }
+        }, 65 * 60 * 1000);
+
+        // Auto-create new lottery after cooldown
+        setTimeout(async () => {
+            await createRaffleLottery(client, guild.id);
+        }, RAFFLE_LOTTERY_COOLDOWN);
+
+        return;
+    }
+
+    // Select random winner
+    const randomIndex = Math.floor(Math.random() * lottery.participants.length);
+    const winner = lottery.participants[randomIndex];
+
+    lottery.status = 'ended';
+    lottery.winnerId = winner.userId;
+    await lottery.save();
+
+    // Award prize to winner
+    const winnerProfile = await dbUtils.ensureProfile(winner.userId, guild.id);
+    winnerProfile.balance += lottery.prizePool;
+    await winnerProfile.save();
+
+    // Trigger balance change event
+    try {
+        const balanceChangeEvent = require('../events/balanceChange');
+        const member = await guild.members.fetch(winner.userId);
+        balanceChangeEvent.execute(member);
+    } catch (err) {
+        console.error('Failed to trigger balance change event:', err);
+    }
+
+    // Update message
+    const channel = guild.channels.cache.get(lottery.channelId);
+    if (channel && lottery.messageId) {
+        try {
+            const message = await channel.messages.fetch(lottery.messageId);
+            const embed = createLotteryEmbed(lottery, true);
+            await message.edit({ embeds: [embed], components: [] });
+        } catch (error) {
+            console.error('Failed to update lottery message:', error);
+        }
+    }
+
+    // Log winner to thread
+    if (lottery.logThreadId) {
+        try {
+            const thread = await client.channels.fetch(lottery.logThreadId);
+            if (thread) {
+                const logEmbed = new EmbedBuilder()
+                    .setTitle('🎉 Raffle Lottery Winner!')
+                    .setColor(0x2ECC71)
+                    .addFields(
+                        { name: 'Winner', value: `<@${winner.userId}>`, inline: true },
+                        { name: 'Prize Won', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                        { name: 'Total Participants', value: `${lottery.participants.length}`, inline: true },
+                        { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: false }
+                    )
+                    .setTimestamp();
+
+                await thread.send({
+                    content: `<@${winner.userId}> 🎉 **CONGRATULATIONS! YOU WON THE RAFFLE!**`,
+                    embeds: [logEmbed]
+                });
+
+                // Archive thread after 5 seconds
+                setTimeout(async () => {
+                    try {
+                        await thread.setArchived(true);
+                    } catch (error) {
+                        console.error('Failed to archive thread:', error);
+                    }
+                }, 5000);
+            }
+        } catch (error) {
+            console.error('Failed to send winner message to thread:', error);
+        }
+    }
+
+    // After 1 hour: delete embed from lotteries channel and post copy to lottery-logs
+    setTimeout(async () => {
+        try {
+            const lotteryChannel = guild.channels.cache.get(lottery.channelId);
+            const logsChannel = guild.channels.cache.get(LOTTERY_LOGS_CHANNEL_ID);
+
+            if (lotteryChannel && lottery.messageId) {
+                try {
+                    const message = await lotteryChannel.messages.fetch(lottery.messageId);
+
+                    // Create archive embed for lottery-logs channel
+                    if (logsChannel) {
+                        const archiveEmbed = new EmbedBuilder()
+                            .setTitle('🎟️ Raffle Lottery - Archived')
+                            .setColor(0x95A5A6)
+                            .setDescription('This raffle has ended and been archived.')
+                            .addFields(
+                                { name: '💰 Final Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                                { name: '👥 Total Participants', value: `${lottery.participants.length}`, inline: true },
+                                { name: '🏆 Winner', value: `<@${winner.userId}>`, inline: true },
+                                { name: '📅 Started', value: `<t:${Math.floor(lottery.startedAt / 1000)}:F>`, inline: true },
+                                { name: '🏁 Ended', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                                { name: 'Lottery ID', value: `\`${lottery._id}\``, inline: false }
+                            )
+                            .setTimestamp();
+
+                        await logsChannel.send({ embeds: [archiveEmbed] });
+                    }
+
+                    // Delete the original message from lotteries channel
+                    await message.delete();
+                    console.log(`[Lottery] Deleted and archived raffle message: ${lottery._id}`);
+                } catch (error) {
+                    console.error('Failed to delete/archive raffle message:', error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to process raffle archival:', error);
+        }
+    }, 60 * 60 * 1000); // 1 hour
+
+    // Set cooldown
+    await lotteryCooldownModel.findOneAndUpdate(
+        { serverID: guild.id, type: 'raffle' },
+        { nextAvailableAt: Date.now() + RAFFLE_LOTTERY_COOLDOWN },
+        { upsert: true }
+    );
+
+    // Delete lottery from database after 65 minutes
+    setTimeout(async () => {
+        try {
+            await lotteryModel.findByIdAndDelete(lottery._id);
+            console.log(`[Lottery] Deleted completed Raffle lottery from database: ${lottery._id}`);
+        } catch (error) {
+            console.error('Failed to delete completed lottery:', error);
+        }
+    }, 65 * 60 * 1000);
+
+    // Auto-create new lottery after cooldown
+    setTimeout(async () => {
+        await createRaffleLottery(client, guild.id);
+    }, RAFFLE_LOTTERY_COOLDOWN);
+}
+
+function scheduleRaffleEnd(lotteryId, endsAt, client) {
+    const timeUntilEnd = endsAt - Date.now();
+
+    if (timeUntilEnd <= 0) {
+        return;
+    }
+
+    setTimeout(async () => {
+        try {
+            const lottery = await lotteryModel.findById(lotteryId);
+            if (!lottery || lottery.status === 'ended') {
+                return;
+            }
+
+            const guild = client.guilds.cache.get(lottery.serverID);
+            if (!guild) {
+                return;
+            }
+
+            await endRaffleLottery(lottery, client, guild);
+        } catch (error) {
+            console.error('Error ending raffle lottery:', error);
+        }
+    }, timeUntilEnd);
+}
+
+module.exports = {
+    createLotteryEmbed,
+    createLotteryButtons,
+    endNumberLottery,
+    endRaffleLottery,
+    scheduleRaffleEnd,
+    createNumberLottery,
+    createRaffleLottery,
+    NUMBER_LOTTERY_COST,
+    RAFFLE_LOTTERY_COST
+};

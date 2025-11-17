@@ -274,6 +274,56 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
 
+    // Calculate interest rate
+    const interestAmount = loan.paybackAmount - loan.loanAmount;
+    const interestRate = (interestAmount / loan.loanAmount) * 100;
+    const isHighInterest = loan.paybackAmount > (loan.loanAmount * 2);
+
+    // Check if this is a confirmation from the high interest warning
+    const isConfirmation = interaction.customId.startsWith('loan_confirm_');
+
+    // If high interest and not a confirmation, show warning
+    if (isHighInterest && !isConfirmation && interaction.isButton()) {
+        const warningEmbed = new EmbedBuilder()
+            .setTitle('⚠️ High Interest Warning')
+            .setColor(0xE74C3C)
+            .setDescription('This loan has a very high interest rate!')
+            .addFields(
+                { name: 'Loan Amount', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: true },
+                { name: 'Payback Amount', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: true },
+                { name: 'Interest', value: `🪙 ${interestAmount.toLocaleString()} points (${interestRate.toFixed(1)}%)`, inline: false },
+                { name: '⚠️ Warning', value: `You will pay back **more than double** the loan amount!\n\nAre you sure you want to accept this loan?`, inline: false }
+            )
+            .setFooter({ text: 'Think carefully before accepting' })
+            .setTimestamp();
+
+        const confirmButton = new ButtonBuilder()
+            .setCustomId(`loan_confirm_${loan._id}`)
+            .setLabel('Yes, Accept Loan')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('✅');
+
+        const cancelButton = new ButtonBuilder()
+            .setCustomId(`loan_cancel_${loan._id}`)
+            .setLabel('No, Cancel')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('❌');
+
+        const row = new ActionRowBuilder()
+            .addComponents(confirmButton, cancelButton);
+
+        return await interaction.reply({
+            embeds: [warningEmbed],
+            components: [row],
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    // If this was a confirmation, acknowledge it
+    if (isConfirmation && interaction.isButton()) {
+        await interaction.deferUpdate();
+    }
+
     // Transfer points from lender to borrower
     const transferResult = await transferPoints(loan.lenderId, loan.borrowerId, loan.loanAmount, { interaction });
 
@@ -286,6 +336,9 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         }
 
         if (interaction.isButton()) {
+            if (isConfirmation) {
+                return await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
+            }
             return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
         }
         return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
@@ -310,6 +363,7 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
             { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
             { name: 'Loan Amount Transferred', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: false },
             { name: 'Amount Due', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: true },
+            { name: 'Interest Rate', value: `${interestRate.toFixed(1)}%`, inline: true },
             { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:F>`, inline: true },
             { name: 'Status', value: '✅ Active', inline: false }
         )
@@ -327,7 +381,8 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         .addFields(
             { name: 'Received', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: false },
             { name: 'Must Pay Back', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: true },
-            { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:R>`, inline: true },
+            //{ name: 'Interest', value: `🪙 ${interestAmount.toLocaleString()} points (${interestRate.toFixed(1)}%)`, inline: true },
+            { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:R>`, inline: false },
             { name: 'Loan ID', value: `\`${loan._id}\``, inline: false }
         )
         .setFooter({ text: 'Use /loan repay to pay back the loan early' })
@@ -335,29 +390,61 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
 
     // If this was a button interaction, update the original message
     if (interaction.isButton()) {
-        // Disable the button
-        const disabledButton = new ButtonBuilder()
-            .setCustomId(`loan_accept_${loan._id}`)
-            .setLabel('Loan Accepted')
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji('✅')
-            .setDisabled(true);
+        if (isConfirmation) {
+            // Update the confirmation message to remove buttons
+            try {
+                await interaction.editReply({ components: [] });
+            } catch (error) {
+                console.error('Failed to update confirmation message:', error);
+            }
 
-        const disabledRow = new ActionRowBuilder()
-            .addComponents(disabledButton);
+            // Send follow-up with confirmation
+            await interaction.followUp({ embeds: [embed] });
 
-        // Update the message to disable the button
-        try {
-            await interaction.update({ components: [disabledRow] });
-        } catch (error) {
-            console.error('Failed to update button:', error);
-            // If update fails, just reply instead
-            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-            return;
+            // Update the original loan offer message
+            try {
+                const originalMessage = await interaction.channel.messages.fetch(interaction.message.reference?.messageId).catch(() => null);
+                if (originalMessage) {
+                    const disabledButton = new ButtonBuilder()
+                        .setCustomId(`loan_accept_${loan._id}`)
+                        .setLabel('Loan Accepted')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('✅')
+                        .setDisabled(true);
+
+                    const disabledRow = new ActionRowBuilder()
+                        .addComponents(disabledButton);
+
+                    await originalMessage.edit({ components: [disabledRow] });
+                }
+            } catch (error) {
+                console.error('Failed to update original loan offer:', error);
+            }
+        } else {
+            // Disable the button
+            const disabledButton = new ButtonBuilder()
+                .setCustomId(`loan_accept_${loan._id}`)
+                .setLabel('Loan Accepted')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('✅')
+                .setDisabled(true);
+
+            const disabledRow = new ActionRowBuilder()
+                .addComponents(disabledButton);
+
+            // Update the message to disable the button
+            try {
+                await interaction.update({ components: [disabledRow] });
+            } catch (error) {
+                console.error('Failed to update button:', error);
+                // If update fails, just reply instead
+                await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+                return;
+            }
+
+            // Send follow-up with confirmation
+            await interaction.followUp({ embeds: [embed] });
         }
-
-        // Send follow-up with confirmation
-        await interaction.followUp({ embeds: [embed] });
     } else {
         await interaction.reply({ embeds: [embed] });
     }
@@ -372,7 +459,8 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
             .addFields(
                 { name: 'Loan Amount', value: `🪙 ${loan.loanAmount.toLocaleString()} points`, inline: false },
                 { name: 'Payback Amount', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: true },
-                { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:R>`, inline: true },
+                { name: 'Interest', value: `🪙 ${interestAmount.toLocaleString()} points (${interestRate.toFixed(1)}%)`, inline: true },
+                { name: 'Due Date', value: `<t:${Math.floor(dueAt / 1000)}:R>`, inline: false },
                 { name: 'Loan ID', value: `\`${loan._id}\``, inline: false }
             )
             .setTimestamp();

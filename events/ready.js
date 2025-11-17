@@ -5,6 +5,9 @@ const { roleRequirements } = require('../globalValues.json');
 const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans } = require('../commands/loan');
 const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker');
 
+const lotteryModel = require('../models/lotterySchema');
+const { scheduleRaffleEnd, createNumberLottery, createRaffleLottery } = require('../utils/lotteryManager');
+
 module.exports = {
     name: Events.ClientReady,
     once: true,
@@ -44,6 +47,75 @@ module.exports = {
             }
         }, 60 * 60 * 1000); // Every hour
 
+
+
+
+        // Reschedule active raffle lotteries
+        try {
+            const activeRaffles = await lotteryModel.find({
+                type: 'raffle',
+                status: 'active'
+            });
+
+            for (const raffle of activeRaffles) {
+                if (raffle.endsAt > Date.now()) {
+                    scheduleRaffleEnd(raffle._id, raffle.endsAt, client);
+                    console.log(`[Lottery] Rescheduled raffle lottery ${raffle._id}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error rescheduling raffle lotteries:', error);
+        }
+
+        // Auto-create lotteries if none exist
+        try {
+            // Wait 5 seconds for bot to fully initialize
+            setTimeout(async () => {
+                for (const [guildId, guild] of client.guilds.cache) {
+                    console.log(`[Lottery] Checking lotteries for guild: ${guild.name} (${guildId})`);
+
+                    // Check for active number lottery
+                    const activeNumberLottery = await lotteryModel.findOne({
+                        serverID: guildId,
+                        type: 'number',
+                        status: 'active'
+                    });
+
+                    if (!activeNumberLottery) {
+                        console.log(`[Lottery] No active number lottery found, creating one...`);
+                        const created = await createNumberLottery(client, guildId);
+                        if (created) {
+                            console.log(`[Lottery] ✅ Created number lottery: ${created._id}`);
+                        } else {
+                            console.log(`[Lottery] ❌ Failed to create number lottery (may be on cooldown)`);
+                        }
+                    } else {
+                        console.log(`[Lottery] Number lottery already active: ${activeNumberLottery._id}`);
+                    }
+
+                    // Check for active raffle lottery
+                    const activeRaffleLottery = await lotteryModel.findOne({
+                        serverID: guildId,
+                        type: 'raffle',
+                        status: 'active'
+                    });
+
+                    if (!activeRaffleLottery) {
+                        console.log(`[Lottery] No active raffle lottery found, creating one...`);
+                        const created = await createRaffleLottery(client, guildId);
+                        if (created) {
+                            console.log(`[Lottery] ✅ Created raffle lottery: ${created._id}`);
+                        } else {
+                            console.log(`[Lottery] ❌ Failed to create raffle lottery (may be on cooldown)`);
+                        }
+                    } else {
+                        console.log(`[Lottery] Raffle lottery already active: ${activeRaffleLottery._id}`);
+                    }
+                }
+            }, 5000);
+        } catch (error) {
+            console.error('Error auto-creating lotteries:', error);
+        }
 
         // Set up event handler for when members join
         client.on(Events.GuildMemberAdd, async (member) => {
