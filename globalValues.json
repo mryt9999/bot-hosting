@@ -79,20 +79,20 @@
             "levelRequirement": 20
         },
         {
+            "roleId": "1438340336056537178",
+            "pointReward": 2000,
+            "jobName": "Blunder Announcer",
+            "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
+            "privateJob": false,
+            "levelRequirement": 15
+        },
+        {
             "roleId": "1438649760075743312",
             "pointReward": 2000,
             "jobName": "MemeLord",
             "jobDescription": "Sends memes in media and other channels.",
             "privateJob": false,
             "levelRequirement": 10
-        },
-        {
-            "roleId": "1438340336056537178",
-            "pointReward": 1500,
-            "jobName": "Blunder Announcer",
-            "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
-            "privateJob": false,
-            "levelRequirement": 5
         },
         {
             "roleId": "1438648903741214770",

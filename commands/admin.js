@@ -665,14 +665,14 @@ module.exports = {
                         .setColor(0x2ECC71)
                         .setDescription('A pending transfer has been marked as paid.')
                         .addFields(
-                            { name: 'Transfer ID', value: `\`${transfer._id}\``, inline: false },
+                            //{ name: 'Transfer ID', value: `\`${transfer._id}\``, inline: false },
                             { name: 'User', value: `<@${transfer.userId}>`, inline: true },
                             { name: 'Paid By', value: `<@${interaction.user.id}>`, inline: true },
-                            { name: 'Items', value: transfer.transferDescription, inline: false },
-                            { name: 'Points', value: `${transfer.pointsPaid.toLocaleString()} points`, inline: true },
+                            { name: 'Total Points', value: `${transfer.pointsPaid.toLocaleString()} points`, inline: true },
                             { name: 'Created', value: `<t:${createdTimestamp}:R>`, inline: true },
                             { name: 'Paid', value: `<t:${paidTimestamp}:R>`, inline: true },
-                            { name: 'Remaining Pending', value: `${remainingPendingTransfers} transfer(s)`, inline: true }
+                            { name: 'Items', value: transfer.transferDescription, inline: false },
+                            //{ name: 'Remaining Pending', value: `${remainingPendingTransfers} transfer(s)`, inline: true }
                         )
                         .setFooter({ text: 'Transfer will be auto-deleted in 24 hours' })
                         .setTimestamp();
