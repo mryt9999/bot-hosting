@@ -578,24 +578,42 @@ module.exports = {
                     lottery = await lotteryModel.findById(lotteryId);
                 } catch (error) {
                     console.error('Invalid lottery ID:', error);
-                    return await interaction.reply({
-                        content: '❌ Invalid lottery ID.',
-                        flags: [MessageFlags.Ephemeral]
-                    });
+                    // Log to thread instead of ephemeral reply
+                    if (lottery && lottery.logThreadId) {
+                        try {
+                            const thread = await interaction.client.channels.fetch(lottery.logThreadId);
+                            if (thread) {
+                                await thread.send({
+                                    content: `<@${interaction.user.id}> ❌ Invalid lottery ID.`
+                                });
+                            }
+                        } catch (err) {
+                            console.error('Failed to log to thread:', err);
+                        }
+                    }
+                    return await interaction.deferUpdate();
                 }
 
                 if (!lottery) {
-                    return await interaction.reply({
-                        content: '❌ Lottery not found.',
-                        flags: [MessageFlags.Ephemeral]
-                    });
+                    return await interaction.deferUpdate();
                 }
 
                 if (lottery.status === 'ended') {
-                    return await interaction.reply({
-                        content: '❌ This lottery has already ended.',
-                        flags: [MessageFlags.Ephemeral]
-                    });
+                    // Get lottery thread for logging
+                    let lotteryThread = null;
+                    if (lottery.logThreadId) {
+                        try {
+                            lotteryThread = await interaction.client.channels.fetch(lottery.logThreadId);
+                            if (lotteryThread) {
+                                await lotteryThread.send({
+                                    content: `<@${interaction.user.id}> ❌ This lottery has already ended.`
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Failed to fetch lottery thread:', error);
+                        }
+                    }
+                    return await interaction.deferUpdate();
                 }
 
                 // Get lottery thread for logging
@@ -616,17 +634,14 @@ module.exports = {
                     if (profileData.balance < NUMBER_LOTTERY_COST) {
                         const errorMsg = `❌ You need ${NUMBER_LOTTERY_COST.toLocaleString()} points to buy a draw. You have ${profileData.balance.toLocaleString()} points.`;
 
-                        // Send to thread if available
+                        // Send to thread only
                         if (lotteryThread) {
                             await lotteryThread.send({
                                 content: `<@${interaction.user.id}> ${errorMsg}`
                             });
                         }
 
-                        return await interaction.reply({
-                            content: errorMsg,
-                            flags: [MessageFlags.Ephemeral]
-                        });
+                        return await interaction.deferUpdate();
                     }
 
                     // Check if all numbers are used
@@ -639,10 +654,7 @@ module.exports = {
                             });
                         }
 
-                        return await interaction.reply({
-                            content: errorMsg,
-                            flags: [MessageFlags.Ephemeral]
-                        });
+                        return await interaction.deferUpdate();
                     }
 
                     await interaction.deferUpdate();
@@ -735,10 +747,7 @@ module.exports = {
                             });
                         }
 
-                        return await interaction.reply({
-                            content: errorMsg,
-                            flags: [MessageFlags.Ephemeral]
-                        });
+                        return await interaction.deferUpdate();
                     }
 
                     // Check if already participated
@@ -752,10 +761,7 @@ module.exports = {
                             });
                         }
 
-                        return await interaction.reply({
-                            content: errorMsg,
-                            flags: [MessageFlags.Ephemeral]
-                        });
+                        return await interaction.deferUpdate();
                     }
 
                     await interaction.deferUpdate();
