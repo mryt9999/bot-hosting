@@ -84,7 +84,7 @@
             "jobName": "MemeLord",
             "jobDescription": "Sends memes in media and other channels.",
             "privateJob": false,
-            "levelRequirement": 15
+            "levelRequirement": 10
         },
         {
             "roleId": "1438340336056537178",
@@ -92,7 +92,7 @@
             "jobName": "Blunder Announcer",
             "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
             "privateJob": false,
-            "levelRequirement": 10
+            "levelRequirement": 5
         },
         {
             "roleId": "1438648903741214770",

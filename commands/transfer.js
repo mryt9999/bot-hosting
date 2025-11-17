@@ -241,14 +241,14 @@ module.exports = {
             }
 
             // Check withdraw limits (pass member for job bonus calculation)
-            const withdrawCheck = await withdrawUtil.canWithdraw(pointCost, profileData, interaction.member);
-
-            if (!withdrawCheck.allowed) {
-                return await interaction.editReply({
-                    content: `❌ ${withdrawCheck.reason}`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
+            /*             const withdrawCheck = await withdrawUtil.canWithdraw(pointCost, profileData, interaction.member);
+            
+                        if (!withdrawCheck.allowed) {
+                            return await interaction.editReply({
+                                content: `❌ ${withdrawCheck.reason}`,
+                                flags: [MessageFlags.Ephemeral]
+                            });
+                        } */
 
             if (profileData.balance < globalValues.minPointsPerWithdraw) {
                 return await interaction.editReply({
@@ -994,7 +994,7 @@ async function handleConfirm(interaction, sessionId) {
         console.log('[Transfer] Session not found in handleConfirm');
         return await interaction.reply({
             content: '❌ This transfer session has expired or is invalid. Please run `/transfer make` again.',
-            flags: MessageFlags.Ephemeral
+            flags: [MessageFlags.Ephemeral]
         });
     }
 
@@ -1002,7 +1002,7 @@ async function handleConfirm(interaction, sessionId) {
         console.log('[Transfer] User mismatch in handleConfirm');
         return await interaction.reply({
             content: '❌ This transfer session is not for you.',
-            flags: MessageFlags.Ephemeral
+            flags: [MessageFlags.Ephemeral]
         });
     }
 
@@ -1017,7 +1017,7 @@ async function handleConfirm(interaction, sessionId) {
             transferSessions.delete(sessionId);
             return await interaction.followUp({
                 content: `❌ Transfer total is below minimum of ${globalValues.minPointsPerWithdraw.toLocaleString()} points. Transaction cancelled.`,
-                flags: MessageFlags.Ephemeral
+                flags: [MessageFlags.Ephemeral]
             });
         }
 
@@ -1025,17 +1025,19 @@ async function handleConfirm(interaction, sessionId) {
             transferSessions.delete(sessionId);
             return await interaction.followUp({
                 content: `❌ Insufficient balance. You need ${session.totalPoints.toLocaleString()} points but only have ${profileData.balance.toLocaleString()} points.`,
-                flags: MessageFlags.Ephemeral
+                flags: [MessageFlags.Ephemeral]
             });
         }
 
-        // Check withdraw limits
-        const canWithdrawResult = await withdrawUtil.canWithdraw(session.totalPoints, profileData);
+        // Check withdraw limits - FIXED: Pass member for job bonus calculation
+        const member = await interaction.guild.members.fetch(session.userId);
+        const canWithdrawResult = await withdrawUtil.canWithdraw(session.totalPoints, profileData, member);
+
         if (!canWithdrawResult.allowed) {
             transferSessions.delete(sessionId);
             return await interaction.followUp({
                 content: `❌ Cannot complete transfer: ${canWithdrawResult.reason}`,
-                flags: MessageFlags.Ephemeral
+                flags: [MessageFlags.Ephemeral]
             });
         }
 
@@ -1050,7 +1052,6 @@ async function handleConfirm(interaction, sessionId) {
 
         // Trigger balance change event
         try {
-            const member = await interaction.guild.members.fetch(session.userId);
             const balanceChangeEvent = require('../events/balanceChange');
             balanceChangeEvent.execute(member);
         } catch (err) {
@@ -1063,6 +1064,9 @@ async function handleConfirm(interaction, sessionId) {
             const genName = item.gen.charAt(0).toUpperCase() + item.gen.slice(1);
             itemsList += `${index + 1}. **${item.amount}x ${genName}** - ${item.points.toLocaleString()} points\n`;
         });
+
+        // Get effective limit for display (with job bonuses)
+        const effectiveUserLimit = withdrawUtil.getUserWithdrawLimit(profileData, member);
 
         const successEmbed = new EmbedBuilder()
             .setTitle('✅ Transfer Successful!')
@@ -1081,14 +1085,14 @@ async function handleConfirm(interaction, sessionId) {
                 },
                 {
                     name: '📅 Weekly Withdrawn',
-                    value: `${profileData.weeklyWithdrawAmount.toLocaleString()} / ${(globalValues.maxWithdrawPerWeek + (profileData.customWithdrawLimit || 0)).toLocaleString()} points`,
+                    value: `${profileData.weeklyWithdrawAmount.toLocaleString()} / ${effectiveUserLimit.toLocaleString()} points`,
                     inline: false
                 }
             )
             .setFooter({ text: 'Thank you for your transfer!', iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
             .setTimestamp();
 
-        //make a new transferModel instance to log the transfer
+        // Make a new transferModel instance to log the transfer
         const newTransfer = new transferModel({
             userId: session.userId,
             serverID: interaction.guild.id,
@@ -1117,7 +1121,6 @@ async function handleConfirm(interaction, sessionId) {
 
         // Give the user globalValues.pendingTransfersRoleId role
         try {
-            const member = await interaction.guild.members.fetch(session.userId);
             await member.roles.add(globalValues.pendingTransfersRoleId);
 
             // Send a message to the transfer exchange channel
@@ -1154,7 +1157,7 @@ async function handleConfirm(interaction, sessionId) {
         transferSessions.delete(sessionId);
         await interaction.followUp({
             content: '❌ An error occurred while processing your transfer. Please try again.',
-            flags: MessageFlags.Ephemeral
+            flags: [MessageFlags.Ephemeral]
         });
     }
 }

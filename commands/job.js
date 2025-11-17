@@ -177,9 +177,8 @@ module.exports = {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
             const userLevel = getUserLevel(interaction.member);
-            const userJobCount = globalValues.paidRoleInfo.filter(job =>
-                interaction.member.roles.cache.has(job.roleId)
-            ).length;
+            const userJobRoles = await getUserJobRoles(interaction.member);
+            const userJobCount = userJobRoles.length;
 
             const allJobs = globalValues.paidRoleInfo.filter(job =>
                 job.jobName && job.jobDescription
@@ -334,9 +333,8 @@ module.exports = {
             }
 
             // Check if user has reached max jobs limit
-            const userJobCount = globalValues.paidRoleInfo.filter(job =>
-                interaction.member.roles.cache.has(job.roleId) && !job.privateJob
-            ).length;
+            const userJobRoles = await getUserJobRoles(interaction.member);
+            const userJobCount = userJobRoles.length;
 
             if (userJobCount >= globalValues.maxJobsPerUser) {
                 return await interaction.editReply({
