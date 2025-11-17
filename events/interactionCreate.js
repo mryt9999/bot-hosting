@@ -577,33 +577,35 @@ module.exports = {
                 try {
                     lottery = await lotteryModel.findById(lotteryId);
                 } catch (error) {
-                    const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                    if (logsChannel) {
-                        await logsChannel.send({
-                            content: `<@${interaction.user.id}> ❌ Invalid lottery ID.`
-                        });
-                    }
-                    return;
+                    console.error('Invalid lottery ID:', error);
+                    return await interaction.reply({
+                        content: '❌ Invalid lottery ID.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
                 }
 
                 if (!lottery) {
-                    const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                    if (logsChannel) {
-                        await logsChannel.send({
-                            content: `<@${interaction.user.id}> ❌ Lottery not found.`
-                        });
-                    }
-                    return;
+                    return await interaction.reply({
+                        content: '❌ Lottery not found.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
                 }
 
                 if (lottery.status === 'ended') {
-                    const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                    if (logsChannel) {
-                        await logsChannel.send({
-                            content: `<@${interaction.user.id}> ❌ This lottery has already ended.`
-                        });
+                    return await interaction.reply({
+                        content: '❌ This lottery has already ended.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Get lottery thread for logging
+                let lotteryThread = null;
+                if (lottery.logThreadId) {
+                    try {
+                        lotteryThread = await interaction.client.channels.fetch(lottery.logThreadId);
+                    } catch (error) {
+                        console.error('Failed to fetch lottery thread:', error);
                     }
-                    return;
                 }
 
                 // Get user profile
@@ -612,24 +614,35 @@ module.exports = {
                 if (lotteryType === 'number') {
                     // Number lottery - buy a draw
                     if (profileData.balance < NUMBER_LOTTERY_COST) {
-                        const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                        if (logsChannel) {
-                            await logsChannel.send({
-                                content: `<@${interaction.user.id}> ❌ You need ${NUMBER_LOTTERY_COST.toLocaleString()} points to buy a draw. You have ${profileData.balance.toLocaleString()} points.`
+                        const errorMsg = `❌ You need ${NUMBER_LOTTERY_COST.toLocaleString()} points to buy a draw. You have ${profileData.balance.toLocaleString()} points.`;
+
+                        // Send to thread if available
+                        if (lotteryThread) {
+                            await lotteryThread.send({
+                                content: `<@${interaction.user.id}> ${errorMsg}`
                             });
                         }
-                        return;
+
+                        return await interaction.reply({
+                            content: errorMsg,
+                            flags: [MessageFlags.Ephemeral]
+                        });
                     }
 
                     // Check if all numbers are used
                     if (lottery.usedNumbers.length >= 1000) {
-                        const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                        if (logsChannel) {
-                            await logsChannel.send({
-                                content: `<@${interaction.user.id}> ❌ All numbers have been used. This lottery is over.`
+                        const errorMsg = '❌ All numbers have been used. This lottery is over.';
+
+                        if (lotteryThread) {
+                            await lotteryThread.send({
+                                content: `<@${interaction.user.id}> ${errorMsg}`
                             });
                         }
-                        return;
+
+                        return await interaction.reply({
+                            content: errorMsg,
+                            flags: [MessageFlags.Ephemeral]
+                        });
                     }
 
                     await interaction.deferUpdate();
@@ -672,6 +685,7 @@ module.exports = {
                     } catch (err) {
                         console.error('Failed to trigger balance change event:', err);
                     }
+
                     if (isWinner) {
                         // Winner!
                         await endNumberLottery(lottery, interaction.client, interaction.guild, interaction.user.id, randomNumber);
@@ -690,53 +704,58 @@ module.exports = {
                         }
 
                         // Log to lottery thread
-                        if (lottery.logThreadId) {
-                            try {
-                                const thread = await interaction.client.channels.fetch(lottery.logThreadId);
-                                if (thread) {
-                                    const logEmbed = new EmbedBuilder()
-                                        .setTitle('🎲 Number Draw Purchase')
-                                        .setColor(0xE74C3C)
-                                        .addFields(
-                                            { name: 'Player', value: `<@${interaction.user.id}>`, inline: true },
-                                            { name: 'Number Drawn', value: `${randomNumber}`, inline: true },
-                                            { name: 'Result', value: '❌ Not a winner', inline: true }
-                                        )
-                                        .setTimestamp();
+                        if (lotteryThread) {
+                            const logEmbed = new EmbedBuilder()
+                                .setTitle('🎲 Number Draw Purchase')
+                                .setColor(0xE74C3C)
+                                .addFields(
+                                    { name: 'Player', value: `<@${interaction.user.id}>`, inline: true },
+                                    { name: 'Number Drawn', value: `${randomNumber}`, inline: true },
+                                    { name: 'Result', value: '❌ Not a winner', inline: true },
+                                    { name: 'Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                                    { name: 'Numbers Used', value: `${lottery.usedNumbers.length}/1000`, inline: true }
+                                )
+                                .setTimestamp();
 
-                                    await thread.send({
-                                        content: `<@${interaction.user.id}>`,
-                                        embeds: [logEmbed]
-                                    });
-                                }
-                            } catch (error) {
-                                console.error('Failed to send to lottery log thread:', error);
-                            }
+                            await lotteryThread.send({
+                                content: `<@${interaction.user.id}>`,
+                                embeds: [logEmbed]
+                            });
                         }
                     }
 
                 } else if (lotteryType === 'raffle') {
                     // Raffle lottery - enter once
                     if (profileData.balance < RAFFLE_LOTTERY_COST) {
-                        const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                        if (logsChannel) {
-                            await logsChannel.send({
-                                content: `<@${interaction.user.id}> ❌ You need ${RAFFLE_LOTTERY_COST.toLocaleString()} points to enter the raffle. You have ${profileData.balance.toLocaleString()} points.`
+                        const errorMsg = `❌ You need ${RAFFLE_LOTTERY_COST.toLocaleString()} points to enter the raffle. You have ${profileData.balance.toLocaleString()} points.`;
+
+                        if (lotteryThread) {
+                            await lotteryThread.send({
+                                content: `<@${interaction.user.id}> ${errorMsg}`
                             });
                         }
-                        return;
+
+                        return await interaction.reply({
+                            content: errorMsg,
+                            flags: [MessageFlags.Ephemeral]
+                        });
                     }
 
                     // Check if already participated
                     const alreadyParticipated = lottery.participants.some(p => p.userId === interaction.user.id);
                     if (alreadyParticipated) {
-                        const logsChannel = interaction.guild.channels.cache.get(process.env.LOTTERY_LOGS_CHANNEL_ID);
-                        if (logsChannel) {
-                            await logsChannel.send({
-                                content: `<@${interaction.user.id}> ❌ You have already entered this raffle. Only one entry per person.`
+                        const errorMsg = '❌ You have already entered this raffle. Only one entry per person.';
+
+                        if (lotteryThread) {
+                            await lotteryThread.send({
+                                content: `<@${interaction.user.id}> ${errorMsg}`
                             });
                         }
-                        return;
+
+                        return await interaction.reply({
+                            content: errorMsg,
+                            flags: [MessageFlags.Ephemeral]
+                        });
                     }
 
                     await interaction.deferUpdate();
@@ -778,29 +797,23 @@ module.exports = {
                     }
 
                     // Log to lottery thread
-                    if (lottery.logThreadId) {
-                        try {
-                            const thread = await interaction.client.channels.fetch(lottery.logThreadId);
-                            if (thread) {
-                                const logEmbed = new EmbedBuilder()
-                                    .setTitle('🎟️ Raffle Entry')
-                                    .setColor(0x3498DB)
-                                    .addFields(
-                                        { name: 'Player', value: `<@${interaction.user.id}>`, inline: true },
-                                        { name: 'Entry Cost', value: `${RAFFLE_LOTTERY_COST.toLocaleString()} points`, inline: true },
-                                        { name: 'Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
-                                        { name: 'Total Participants', value: `${lottery.participants.length}`, inline: true }
-                                    )
-                                    .setTimestamp();
+                    if (lotteryThread) {
+                        const logEmbed = new EmbedBuilder()
+                            .setTitle('🎟️ Raffle Entry')
+                            .setColor(0x3498DB)
+                            .addFields(
+                                { name: 'Player', value: `<@${interaction.user.id}>`, inline: true },
+                                { name: 'Entry Cost', value: `${RAFFLE_LOTTERY_COST.toLocaleString()} points`, inline: true },
+                                { name: 'Prize Pool', value: `${lottery.prizePool.toLocaleString()} points`, inline: true },
+                                { name: 'Total Participants', value: `${lottery.participants.length}`, inline: true },
+                                { name: 'Time Remaining', value: `<t:${Math.floor(lottery.endsAt / 1000)}:R>`, inline: true }
+                            )
+                            .setTimestamp();
 
-                                await thread.send({
-                                    content: `<@${interaction.user.id}> ✅ Entered the raffle!`,
-                                    embeds: [logEmbed]
-                                });
-                            }
-                        } catch (error) {
-                            console.error('Failed to send to lottery log thread:', error);
-                        }
+                        await lotteryThread.send({
+                            content: `<@${interaction.user.id}> ✅ Entered the raffle!`,
+                            embeds: [logEmbed]
+                        });
                     }
                 }
 
