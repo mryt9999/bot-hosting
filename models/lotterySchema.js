@@ -1,23 +1,69 @@
 const mongoose = require('mongoose');
 
 const lotterySchema = new mongoose.Schema({
-    serverID: { type: String, required: true },
-    type: { type: String, enum: ['number', 'raffle'], required: true }, // 'number' or 'raffle'
-    status: { type: String, enum: ['active', 'ended'], default: 'active' },
-    prizePool: { type: Number, default: 0 },
-    startedAt: { type: Date, default: Date.now },
-    endsAt: { type: Date }, // Only for raffle type
-    winningNumber: { type: Number }, // Only for number type (1-1000)
-    usedNumbers: { type: [Number], default: [] }, // Only for number type
+    serverID: {
+        type: String,
+        required: true
+    },
+    type: {
+        type: String,
+        enum: ['number', 'raffle'],
+        required: true
+    },
+    status: {
+        type: String,
+        enum: ['active', 'ended'],
+        default: 'active'
+    },
+    prizePool: {
+        type: Number,
+        default: 0
+    },
+    startedAt: {
+        type: Number,
+        required: true
+    },
+    endedAt: {
+        type: Number,
+        default: null
+    },
+    endsAt: {
+        type: Number,
+        default: null
+    },
+    channelId: {
+        type: String,
+        required: true
+    },
+    messageId: {
+        type: String,
+        default: null
+    },
+    logThreadId: {
+        type: String,
+        default: null
+    },
+    winnerId: {
+        type: String,
+        default: null
+    },
+    winningNumber: {
+        type: Number,
+        default: null
+    },
+    usedNumbers: {
+        type: [Number],
+        default: []
+    },
     participants: [{
         userId: String,
-        number: Number, // Only for number type
-        joinedAt: { type: Date, default: Date.now }
+        number: Number,
+        joinedAt: Number
     }],
-    winnerId: { type: String },
-    messageId: { type: String }, // Discord message ID for updating
-    channelId: { type: String },
-    logThreadId: { type: String }, // Discord thread ID for logs
+    archived: {
+        type: Boolean,
+        default: false
+    }
 });
 
 module.exports = mongoose.model('Lottery', lotterySchema);
