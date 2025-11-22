@@ -79,6 +79,13 @@
             "levelRequirement": 20
         },
         {
+            "roleId": "1441877544994472148",
+            "pointReward": 1500,
+            "jobName": "Pet Lover",
+            "jobDescription": "Posts images of pets into pets channel.",
+            "privateJob": true
+        },
+        {
             "roleId": "1438340336056537178",
             "pointReward": 1000,
             "jobName": "Blunder Announcer",
