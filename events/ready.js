@@ -8,6 +8,8 @@ const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker
 const lotteryModel = require('../models/lotterySchema');
 const { scheduleRaffleEnd, createNumberLottery, createRaffleLottery, archiveLottery } = require('../utils/lotteryManager');
 
+const LOTTERY_ARCHIVAL_DELAY = 60 * 60 * 1000; // 1 hour in milliseconds
+
 module.exports = {
     name: Events.ClientReady,
     once: true,
@@ -30,7 +32,7 @@ module.exports = {
             console.error('Failed to reschedule active loans:', error);
         }
 
-        // Start pending loan cleanup
+        // Start pending loan cleanup //
         try {
             startPendingLoanCleanup(client);
         } catch (error) {

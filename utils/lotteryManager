@@ -15,6 +15,8 @@ const RAFFLE_LOTTERY_STARTING_POOL = 10000;
 const RAFFLE_LOTTERY_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const RAFFLE_LOTTERY_COOLDOWN = 4 * 60 * 60 * 1000; // 4 hours
 
+const LOTTERY_ARCHIVAL_DELAY = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
 function createLotteryEmbed(lottery, ended = false) {
     const isNumber = lottery.type === 'number';
     const embed = new EmbedBuilder()
@@ -470,7 +472,7 @@ async function endNumberLottery(lottery, client, guild, winnerId, winningNumber)
         }
     }
 
-    setTimeout(() => archiveLottery(lottery, client, winnerId, winningNumber), 60 * 60 * 1000);
+    setTimeout(() => archiveLottery(lottery, client, winnerId, winningNumber), LOTTERY_ARCHIVAL_DELAY);
 
     await lotteryCooldownModel.findOneAndUpdate(
         { serverID: guild.id, type: 'number' },
@@ -538,7 +540,7 @@ async function endRaffleLottery(lottery, client, guild) {
             }
         }
 
-        setTimeout(() => archiveLottery(lottery, client, null, null), 60 * 60 * 1000);
+        setTimeout(() => archiveLottery(lottery, client, null, null), LOTTERY_ARCHIVAL_DELAY);
 
         await lotteryCooldownModel.findOneAndUpdate(
             { serverID: guild.id, type: 'raffle' },
