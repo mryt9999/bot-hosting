@@ -628,7 +628,7 @@ async function endRaffleLottery(lottery, client, guild) {
         }
     }
 
-    setTimeout(() => archiveLottery(lottery, client, winner.userId, null), 60 * 60 * 1000);
+    setTimeout(() => archiveLottery(lottery, client, winner.userId, null), LOTTERY_ARCHIVAL_DELAY);
 
     await lotteryCooldownModel.findOneAndUpdate(
         { serverID: guild.id, type: 'raffle' },
@@ -643,7 +643,7 @@ async function endRaffleLottery(lottery, client, guild) {
         } catch (error) {
             console.error('Failed to delete completed lottery:', error);
         }
-    }, 65 * 60 * 1000);
+    }, LOTTERY_ARCHIVAL_DELAY + (5 * 60 * 1000)); // Archival delay + 5 minutes buffer
 
     setTimeout(async () => {
         await createRaffleLottery(client, guild.id);
