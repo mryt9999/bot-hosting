@@ -10,6 +10,12 @@ if (!global.activeTTTGames) {
     global.activeTTTGames = new Map();
 }
 
+if (!global.activeC4Games) {
+    global.activeC4Games = new Map();
+}
+
+
+
 const activeRPSGames = new Map();
 const pendingRPSChallenges = new Map(); // Track pending challenges
 
@@ -896,6 +902,384 @@ module.exports = {
 
 
             ////////////////////////
+
+
+
+            // Connect 4 Challenge Accept/Decline
+            if (interaction.customId.startsWith('c4_accept_') || interaction.customId.startsWith('c4_decline_')) {
+                const parts = interaction.customId.split('_');
+                const action = parts[1];
+                const challengerId = parts[2];
+                const opponentId = parts[3];
+                const betAmount = action === 'accept' ? parseInt(parts[4]) : 0;
+
+                if (interaction.user.id !== opponentId) {
+                    return await interaction.reply({
+                        content: '❌ Only the challenged player can respond to this challenge.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                if (action === 'decline') {
+                    const declineEmbed = new EmbedBuilder()
+                        .setTitle('🔴 Challenge Declined')
+                        .setDescription(`<@${opponentId}> declined the Connect 4 challenge.`)
+                        .setColor(0x95A5A6)
+                        .setTimestamp();
+
+                    await interaction.update({
+                        embeds: [declineEmbed],
+                        components: []
+                    });
+                    return;
+                }
+
+                // Verify balances
+                const challengerProfile = await profileModel.findOne({
+                    userId: challengerId,
+                    serverID: interaction.guild.id
+                });
+                const opponentProfile = await profileModel.findOne({
+                    userId: opponentId,
+                    serverID: interaction.guild.id
+                });
+
+                if (challengerProfile.balance < betAmount) {
+                    await interaction.update({
+                        content: `❌ Challenge cancelled. <@${challengerId}> no longer has enough points.`,
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+
+                if (opponentProfile.balance < betAmount) {
+                    await interaction.update({
+                        content: `❌ Challenge cancelled. <@${opponentId}> doesn't have enough points.`,
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+
+                // Initialize game
+                const gameId = `${challengerId}_${opponentId}_${Date.now()}`;
+
+                if (!global.activeC4Games) {
+                    global.activeC4Games = new Map();
+                }
+
+                global.activeC4Games.set(gameId, {
+                    challengerId,
+                    opponentId,
+                    betAmount,
+                    board: Array(6).fill(null).map(() => Array(7).fill('')), // 6 rows x 7 columns
+                    currentTurn: challengerId, // Red goes first
+                    redPlayer: challengerId,
+                    yellowPlayer: opponentId,
+                    messageId: interaction.message.id
+                });
+
+                // Create game board
+                const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board);
+
+                const gameEmbed = new EmbedBuilder()
+                    .setTitle('🔴 Connect 4')
+                    .setDescription(`**Current Turn:** <@${challengerId}> (🔴)`)
+                    .addFields(
+                        { name: '🔴 Red Player', value: `<@${challengerId}>`, inline: true },
+                        { name: '🟡 Yellow Player', value: `<@${opponentId}>`, inline: true },
+                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                    )
+                    .setColor(0xE74C3C)
+                    .setTimestamp();
+
+                await interaction.update({
+                    content: `<@${challengerId}> vs <@${opponentId}>`,
+                    embeds: [gameEmbed],
+                    components: boardButtons
+                });
+
+                // Game timeout
+                setTimeout(() => {
+                    if (global.activeC4Games && global.activeC4Games.has(gameId)) {
+                        global.activeC4Games.delete(gameId);
+                        interaction.message.edit({
+                            content: '⏱️ Game expired - no moves were made in time.',
+                            embeds: [],
+                            components: []
+                        }).catch(() => { });
+                    }
+                }, 10 * 60 * 1000); // 10 minutes
+            }
+
+            // Connect 4 Move Handler
+            if (interaction.customId.startsWith('c4_drop_')) {
+                const parts = interaction.customId.split('_');
+                const column = parseInt(parts[2]);
+                const gameId = parts.slice(3).join('_');
+
+                if (!global.activeC4Games) {
+                    global.activeC4Games = new Map();
+                }
+
+                const game = global.activeC4Games.get(gameId);
+                if (!game) {
+                    return await interaction.reply({
+                        content: '❌ This game has expired or already finished.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                const { challengerId, opponentId, betAmount, board, currentTurn, redPlayer, yellowPlayer, messageId } = game;
+
+                // Verify correct message
+                if (interaction.message.id !== messageId) {
+                    return await interaction.reply({
+                        content: '❌ This game belongs to a different message.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Verify it's the player's turn
+                if (interaction.user.id !== currentTurn) {
+                    return await interaction.reply({
+                        content: '❌ It\'s not your turn!',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Find lowest available row in the column
+                let row = -1;
+                for (let r = 5; r >= 0; r--) {
+                    if (board[r][column] === '') {
+                        row = r;
+                        break;
+                    }
+                }
+
+                // Column is full
+                if (row === -1) {
+                    return await interaction.reply({
+                        content: '❌ That column is full!',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Make move
+                const symbol = currentTurn === redPlayer ? 'R' : 'Y';
+                board[row][column] = symbol;
+
+                // Check for winner
+                const winner = checkConnect4Winner(board, row, column);
+                const isTie = !winner && board[0].every(cell => cell !== '');
+
+                if (winner || isTie) {
+                    // Game over
+                    let winnerId = null;
+                    if (winner === 'R') {
+                        winnerId = redPlayer;
+                    } else if (winner === 'Y') {
+                        winnerId = yellowPlayer;
+                    }
+
+                    // Update balances
+                    if (winnerId) {
+                        const winnerProfile = await profileModel.findOne({
+                            userId: winnerId,
+                            serverID: interaction.guild.id
+                        });
+                        const loserId = winnerId === challengerId ? opponentId : challengerId;
+                        const loserProfile = await profileModel.findOne({
+                            userId: loserId,
+                            serverID: interaction.guild.id
+                        });
+
+                        winnerProfile.balance += betAmount;
+                        loserProfile.balance -= betAmount;
+
+                        await winnerProfile.save();
+                        await loserProfile.save();
+
+                        // Trigger balance change event
+                        try {
+                            const balanceChangeEvent = require('./balanceChange');
+                            const winnerMember = await interaction.guild.members.fetch(winnerId);
+                            const loserMember = await interaction.guild.members.fetch(loserId);
+                            balanceChangeEvent.execute(winnerMember);
+                            balanceChangeEvent.execute(loserMember);
+                        } catch (err) {
+                            console.error('Failed to trigger balance change event:', err);
+                        }
+                    }
+
+                    // Create result embed
+                    const resultEmbed = new EmbedBuilder()
+                        .setTitle('🔴 Connect 4 Results')
+                        .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+                        .setTimestamp();
+
+                    let description = '';
+                    if (winnerId) {
+                        const emoji = winnerId === redPlayer ? '🔴' : '🟡';
+                        description = `# 🎉 ${emoji} <@${winnerId}> WINS!\n\n`;
+                        description += `**Prize:** ${(betAmount * 2).toLocaleString()} points`;
+                    } else {
+                        description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.';
+                    }
+
+                    resultEmbed.setDescription(description);
+
+                    // Final board
+                    const finalBoardButtons = createConnect4Board(gameId, board, true);
+
+                    await interaction.update({
+                        embeds: [resultEmbed],
+                        components: finalBoardButtons
+                    });
+
+                    // Log to games channel
+                    const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+                    if (gamesLogsChannel) {
+                        const logEmbed = new EmbedBuilder()
+                            .setTitle('🔴 Connect 4 Game Result')
+                            .addFields(
+                                { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
+                                { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
+                                { name: 'Result', value: winnerId ? `🎉 <@${winnerId}> wins!` : '🤝 Tie - Bets refunded', inline: false },
+                                { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
+                                { name: 'Total Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
+                            )
+                            .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+                            .setTimestamp();
+
+                        await gamesLogsChannel.send({ embeds: [logEmbed] });
+                    }
+
+                    // Clean up game
+                    global.activeC4Games.delete(gameId);
+                } else {
+                    // Continue game - switch turns
+                    game.currentTurn = currentTurn === challengerId ? opponentId : challengerId;
+                    const nextSymbol = game.currentTurn === redPlayer ? 'Red (🔴)' : 'Yellow (🟡)';
+
+                    const updatedEmbed = new EmbedBuilder()
+                        .setTitle('🔴 Connect 4')
+                        .setDescription(`**Current Turn:** <@${game.currentTurn}> (${nextSymbol})`)
+                        .addFields(
+                            { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
+                            { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
+                            { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                        )
+                        .setColor(game.currentTurn === redPlayer ? 0xE74C3C : 0xF1C40F)
+                        .setTimestamp();
+
+                    const updatedBoardButtons = createConnect4Board(gameId, board);
+
+                    await interaction.update({
+                        embeds: [updatedEmbed],
+                        components: updatedBoardButtons
+                    });
+                }
+            }
+
+            // ...existing code...
+
+            // Helper function to create Connect 4 board buttons
+            function createConnect4Board(gameId, board, disabled = false) {
+                const rows = [];
+
+                // Column number buttons (to drop pieces)
+                const columnRow = new ActionRowBuilder();
+                for (let col = 0; col < 7; col++) {
+                    columnRow.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`c4_drop_${col}_${gameId}`)
+                            .setLabel(`${col + 1}`)
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(disabled || board[0][col] !== '')
+                    );
+                }
+                rows.push(columnRow);
+
+                // Board display (first 5 rows - Discord limit is 5 action rows)
+                for (let row = 0; row < 5; row++) {
+                    const boardRow = new ActionRowBuilder();
+                    for (let col = 0; col < 7; col++) {
+                        const cell = board[row][col];
+                        let emoji = '⚪';
+                        let style = ButtonStyle.Secondary;
+
+                        if (cell === 'R') {
+                            emoji = '🔴';
+                            style = ButtonStyle.Danger;
+                        } else if (cell === 'Y') {
+                            emoji = '🟡';
+                            style = ButtonStyle.Primary;
+                        }
+
+                        boardRow.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`c4_cell_${row}_${col}_${gameId}`)
+                                .setEmoji(emoji)
+                                .setStyle(style)
+                                .setDisabled(true) // Display only
+                        );
+                    }
+                    rows.push(boardRow);
+                }
+
+                return rows;
+            }
+
+            // Helper function to check for Connect 4 winner
+            function checkConnect4Winner(board, lastRow, lastCol) {
+                const directions = [
+                    { dr: 0, dc: 1 },  // Horizontal
+                    { dr: 1, dc: 0 },  // Vertical
+                    { dr: 1, dc: 1 },  // Diagonal down-right
+                    { dr: 1, dc: -1 }  // Diagonal down-left
+                ];
+
+                const symbol = board[lastRow][lastCol];
+                if (!symbol) {
+                    return null;
+                }
+
+                for (const { dr, dc } of directions) {
+                    let count = 1;
+
+                    // Check positive direction
+                    let r = lastRow + dr;
+                    let c = lastCol + dc;
+                    while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
+                        count++;
+                        r += dr;
+                        c += dc;
+                    }
+
+                    // Check negative direction
+                    r = lastRow - dr;
+                    c = lastCol - dc;
+                    while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
+                        count++;
+                        r -= dr;
+                        c -= dc;
+                    }
+
+                    if (count >= 4) {
+                        return symbol; // Returns 'R' or 'Y'
+                    }
+                }
+
+                return null; // No winner yet
+            }
+
+
+
+
+
+            ///////////////////////
 
 
             // Lottery buttons
