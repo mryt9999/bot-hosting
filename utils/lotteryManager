@@ -487,7 +487,7 @@ async function endNumberLottery(lottery, client, guild, winnerId, winningNumber)
         } catch (error) {
             console.error('Failed to delete completed lottery:', error);
         }
-    }, 65 * 60 * 1000);
+    }, LOTTERY_ARCHIVAL_DELAY + (5 * 60 * 1000)); // Archival delay + 5 minutes buffer
 
     setTimeout(async () => {
         await createNumberLottery(client, guild.id);
@@ -555,7 +555,7 @@ async function endRaffleLottery(lottery, client, guild) {
             } catch (error) {
                 console.error('Failed to delete completed lottery:', error);
             }
-        }, 65 * 60 * 1000);
+        }, LOTTERY_ARCHIVAL_DELAY + (5 * 60 * 1000)); // Archival delay + 5 minutes buffer
 
         setTimeout(async () => {
             await createRaffleLottery(client, guild.id);
