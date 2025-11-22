@@ -1,9 +1,9 @@
 {
     "pointMultiplier": 1,
-    "dailyMin": 1000,
-    "dailyMax": 2000,
+    "dailyMin": 500,
+    "dailyMax": 1000,
     "maxWithdrawPerWeek": 50000,
-    "maxGlobalWithdrawPerWeek": 200000,
+    "maxGlobalWithdrawPerWeek": 300000,
     "minPointsPerWithdraw": 10000,
     "maxGensPerWithdraw": 50,
     "pointsPerGodlyGen": 1,
@@ -24,25 +24,25 @@
             "taskId": "1",
             "taskName": "PublicDonation",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 1000
+            "pointRewardPerCompletion": 750
         },
         {
             "taskId": "2",
             "taskName": "ServerDonation",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 3000
+            "pointRewardPerCompletion": 1500
         },
         {
             "taskId": "3",
             "taskName": "PublicGiveaway",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 1000
+            "pointRewardPerCompletion": 750
         },
         {
             "taskId": "4",
             "taskName": "ServerGiveaway",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 2000
+            "pointRewardPerCompletion": 1250
         },
         {
             "taskId": "5",
@@ -55,7 +55,7 @@
     "paidRoleInfo": [
         {
             "roleId": "1437830285319344168",
-            "pointReward": 3000,
+            "pointReward": 2500,
             "jobName": "Executive",
             "jobDescription": "Helps manage the server, answers questions, and more.",
             "privateJob": false,
@@ -64,7 +64,7 @@
         },
         {
             "roleId": "1438641566854938654",
-            "pointReward": 5000,
+            "pointReward": 3000,
             "jobName": "Booster",
             "jobDescription": "Boosted the server.",
             "privateJob": true,
@@ -72,7 +72,7 @@
         },
         {
             "roleId": "1438150897757589514",
-            "pointReward": 2500,
+            "pointReward": 1500,
             "jobName": "Bot Tester",
             "jobDescription": "Tests the economy bot, and reports any bugs, glitches, improvements and issues.",
             "privateJob": false,
@@ -80,7 +80,7 @@
         },
         {
             "roleId": "1438340336056537178",
-            "pointReward": 2000,
+            "pointReward": 1000,
             "jobName": "Blunder Announcer",
             "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
             "privateJob": false,
@@ -88,7 +88,7 @@
         },
         {
             "roleId": "1438649760075743312",
-            "pointReward": 2000,
+            "pointReward": 1000,
             "jobName": "MemeLord",
             "jobDescription": "Sends memes in media and other channels.",
             "privateJob": false,
@@ -96,7 +96,7 @@
         },
         {
             "roleId": "1438648903741214770",
-            "pointReward": 1500,
+            "pointReward": 750,
             "jobName": "Poll Maker",
             "jobDescription": "Makes random polls about anything in the poll channel.",
             "privateJob": false,
@@ -104,7 +104,7 @@
         },
         {
             "roleId": "1439740356521361448",
-            "pointReward": 1000,
+            "pointReward": 500,
             "jobName": "Greeter",
             "jobDescription": "Greets new members.",
             "privateJob": false
