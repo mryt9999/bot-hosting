@@ -55,7 +55,7 @@
     "paidRoleInfo": [
         {
             "roleId": "1437830285319344168",
-            "pointReward": 2500,
+            "pointReward": 2000,
             "jobName": "Executive",
             "jobDescription": "Helps manage the server, answers questions, and more.",
             "privateJob": false,
@@ -64,7 +64,7 @@
         },
         {
             "roleId": "1438641566854938654",
-            "pointReward": 3000,
+            "pointReward": 2500,
             "jobName": "Booster",
             "jobDescription": "Boosted the server.",
             "privateJob": true,
@@ -72,7 +72,7 @@
         },
         {
             "roleId": "1438150897757589514",
-            "pointReward": 1500,
+            "pointReward": 1250,
             "jobName": "Bot Tester",
             "jobDescription": "Tests the economy bot, and reports any bugs, glitches, improvements and issues.",
             "privateJob": false,

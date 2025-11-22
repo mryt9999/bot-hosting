@@ -5,6 +5,10 @@ const lotteryModel = require('../models/lotterySchema');
 const { endNumberLottery, NUMBER_LOTTERY_COST, RAFFLE_LOTTERY_COST } = require('../utils/lotteryManager');
 const dbUtils = require('../utils/dbUtils');
 
+// Initialize global game trackers
+if (!global.activeTTTGames) {
+    global.activeTTTGames = new Map();
+}
 
 const activeRPSGames = new Map();
 const pendingRPSChallenges = new Map(); // Track pending challenges
@@ -538,7 +542,7 @@ module.exports = {
                         components: []
                     });
                     // log the result to rock paper sccicors log channel
-                    const rpsLogsChannel = interaction.guild.channels.cache.get(process.env.RPS_LOGS_CHANNEL_ID);
+                    const rpsLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
                     if (rpsLogsChannel) {
                         const logEmbed = new EmbedBuilder()
                             .setTitle('🪨📄✂️ Rock Paper Scissors Game Result')
@@ -564,6 +568,334 @@ module.exports = {
 
 
             ///////////////////////
+
+
+            // Tic Tac Toe Challenge Accept/Decline
+            if (interaction.customId.startsWith('ttt_accept_') || interaction.customId.startsWith('ttt_decline_')) {
+                const parts = interaction.customId.split('_');
+                const action = parts[1];
+                const challengerId = parts[2];
+                const opponentId = parts[3];
+                const betAmount = action === 'accept' ? parseInt(parts[4]) : 0;
+
+                if (interaction.user.id !== opponentId) {
+                    return await interaction.reply({
+                        content: '❌ Only the challenged player can respond to this challenge.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                if (action === 'decline') {
+                    const declineEmbed = new EmbedBuilder()
+                        .setTitle('⭕ Challenge Declined')
+                        .setDescription(`<@${opponentId}> declined the Tic Tac Toe challenge.`)
+                        .setColor(0x95A5A6)
+                        .setTimestamp();
+
+                    await interaction.update({
+                        embeds: [declineEmbed],
+                        components: []
+                    });
+                    return;
+                }
+
+                // Verify balances
+                const challengerProfile = await profileModel.findOne({
+                    userId: challengerId,
+                    serverID: interaction.guild.id
+                });
+                const opponentProfile = await profileModel.findOne({
+                    userId: opponentId,
+                    serverID: interaction.guild.id
+                });
+
+                if (challengerProfile.balance < betAmount) {
+                    await interaction.update({
+                        content: `❌ Challenge cancelled. <@${challengerId}> no longer has enough points.`,
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+
+                if (opponentProfile.balance < betAmount) {
+                    await interaction.update({
+                        content: `❌ Challenge cancelled. <@${opponentId}> doesn't have enough points.`,
+                        embeds: [],
+                        components: []
+                    });
+                    return;
+                }
+
+                // Initialize game
+                const gameId = `${challengerId}_${opponentId}_${Date.now()}`;
+                const activeTTTGames = new Map();
+
+                activeTTTGames.set(gameId, {
+                    challengerId,
+                    opponentId,
+                    betAmount,
+                    board: ['', '', '', '', '', '', '', '', ''], // 3x3 grid
+                    currentTurn: challengerId, // X goes first
+                    xPlayer: challengerId,
+                    oPlayer: opponentId,
+                    messageId: interaction.message.id
+                });
+
+                // Create game board
+                const boardButtons = createTicTacToeBoard(gameId, ['', '', '', '', '', '', '', '', '']);
+
+                const gameEmbed = new EmbedBuilder()
+                    .setTitle('⭕ Tic Tac Toe')
+                    .setDescription(`**Current Turn:** <@${challengerId}> (⭕)`)
+                    .addFields(
+                        { name: '⭕ X Player', value: `<@${challengerId}>`, inline: true },
+                        { name: '❌ O Player', value: `<@${opponentId}>`, inline: true },
+                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                    )
+                    .setColor(0x3498DB)
+                    .setTimestamp();
+
+                await interaction.update({
+                    content: `<@${challengerId}> vs <@${opponentId}>`,
+                    embeds: [gameEmbed],
+                    components: boardButtons
+                });
+
+                // Store game in a module-level Map (you'll need to add this at the top of the file)
+                if (!global.activeTTTGames) {
+                    global.activeTTTGames = new Map();
+                }
+                global.activeTTTGames.set(gameId, activeTTTGames.get(gameId));
+
+                // Game timeout
+                setTimeout(() => {
+                    if (global.activeTTTGames && global.activeTTTGames.has(gameId)) {
+                        global.activeTTTGames.delete(gameId);
+                        interaction.message.edit({
+                            content: '⏱️ Game expired - no moves were made in time.',
+                            embeds: [],
+                            components: []
+                        }).catch(() => { });
+                    }
+                }, 5 * 60 * 1000); // 5 minutes
+            }
+
+            // Tic Tac Toe Move Handler
+            if (interaction.customId.startsWith('ttt_move_')) {
+                const parts = interaction.customId.split('_');
+                const position = parseInt(parts[2]);
+                const gameId = parts.slice(3).join('_');
+
+                if (!global.activeTTTGames) {
+                    global.activeTTTGames = new Map();
+                }
+
+                const game = global.activeTTTGames.get(gameId);
+                if (!game) {
+                    return await interaction.reply({
+                        content: '❌ This game has expired or already finished.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                const { challengerId, opponentId, betAmount, board, currentTurn, xPlayer, oPlayer, messageId } = game;
+
+                // Verify correct message
+                if (interaction.message.id !== messageId) {
+                    return await interaction.reply({
+                        content: '❌ This game belongs to a different message.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Verify it's the player's turn
+                if (interaction.user.id !== currentTurn) {
+                    return await interaction.reply({
+                        content: '❌ It\'s not your turn!',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Verify position is empty
+                if (board[position] !== '') {
+                    return await interaction.reply({
+                        content: '❌ That position is already taken!',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Make move
+                const symbol = currentTurn === xPlayer ? 'X' : 'O';
+                board[position] = symbol;
+
+                // Check for winner
+                const winner = checkTicTacToeWinner(board);
+                const isTie = !winner && board.every(cell => cell !== '');
+
+                if (winner || isTie) {
+                    // Game over
+                    let winnerId = null;
+                    if (winner === 'X') {
+                        winnerId = xPlayer;
+                    } else if (winner === 'O') {
+                        winnerId = oPlayer;
+                    }
+
+                    // Update balances
+                    if (winnerId) {
+                        const winnerProfile = await profileModel.findOne({
+                            userId: winnerId,
+                            serverID: interaction.guild.id
+                        });
+                        const loserId = winnerId === challengerId ? opponentId : challengerId;
+                        const loserProfile = await profileModel.findOne({
+                            userId: loserId,
+                            serverID: interaction.guild.id
+                        });
+
+                        winnerProfile.balance += betAmount;
+                        loserProfile.balance -= betAmount;
+
+                        await winnerProfile.save();
+                        await loserProfile.save();
+
+                        // Trigger balance change event
+                        try {
+                            const balanceChangeEvent = require('./balanceChange');
+                            const winnerMember = await interaction.guild.members.fetch(winnerId);
+                            const loserMember = await interaction.guild.members.fetch(loserId);
+                            balanceChangeEvent.execute(winnerMember);
+                            balanceChangeEvent.execute(loserMember);
+                        } catch (err) {
+                            console.error('Failed to trigger balance change event:', err);
+                        }
+                    }
+
+                    // Create result embed
+                    const resultEmbed = new EmbedBuilder()
+                        .setTitle('⭕ Tic Tac Toe Results')
+                        .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
+                        .setTimestamp();
+
+                    let description = '';
+                    if (winnerId) {
+                        description = `# 🎉 <@${winnerId}> WINS!\n\n`;
+                        description += `**Prize:** ${(betAmount * 2).toLocaleString()} points`;
+                    } else {
+                        description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.';
+                    }
+
+                    resultEmbed.setDescription(description);
+
+                    // Final board
+                    const finalBoardButtons = createTicTacToeBoard(gameId, board, true);
+
+                    await interaction.update({
+                        embeds: [resultEmbed],
+                        components: finalBoardButtons
+                    });
+
+                    // Log to games channel
+                    const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+                    if (gamesLogsChannel) {
+                        const logEmbed = new EmbedBuilder()
+                            .setTitle('⭕ Tic Tac Toe Game Result')
+                            .addFields(
+                                { name: 'X Player', value: `<@${xPlayer}>`, inline: true },
+                                { name: 'O Player', value: `<@${oPlayer}>`, inline: true },
+                                { name: 'Result', value: winnerId ? `🎉 <@${winnerId}> wins!` : '🤝 Tie - Bets refunded', inline: false },
+                                { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
+                                { name: 'Total Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
+                            )
+                            .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
+                            .setTimestamp();
+
+                        await gamesLogsChannel.send({ embeds: [logEmbed] });
+                    }
+
+                    // Clean up game
+                    global.activeTTTGames.delete(gameId);
+                } else {
+                    // Continue game - switch turns
+                    game.currentTurn = currentTurn === challengerId ? opponentId : challengerId;
+                    const nextSymbol = game.currentTurn === xPlayer ? 'X (⭕)' : 'O (❌)';
+
+                    const updatedEmbed = new EmbedBuilder()
+                        .setTitle('⭕ Tic Tac Toe')
+                        .setDescription(`**Current Turn:** <@${game.currentTurn}> (${nextSymbol})`)
+                        .addFields(
+                            { name: '⭕ X Player', value: `<@${xPlayer}>`, inline: true },
+                            { name: '❌ O Player', value: `<@${oPlayer}>`, inline: true },
+                            { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                        )
+                        .setColor(0x3498DB)
+                        .setTimestamp();
+
+                    const updatedBoardButtons = createTicTacToeBoard(gameId, board);
+
+                    await interaction.update({
+                        embeds: [updatedEmbed],
+                        components: updatedBoardButtons
+                    });
+                }
+            }
+
+            // ...existing code...
+
+            // Helper function to create Tic Tac Toe board buttons
+            function createTicTacToeBoard(gameId, board, disabled = false) {
+                const rows = [];
+                for (let i = 0; i < 3; i++) {
+                    const row = new ActionRowBuilder();
+                    for (let j = 0; j < 3; j++) {
+                        const position = i * 3 + j;
+                        const cell = board[position];
+
+                        let emoji = '⬜';
+                        let style = ButtonStyle.Secondary;
+
+                        if (cell === 'X') {
+                            emoji = '⭕';
+                            style = ButtonStyle.Primary;
+                        } else if (cell === 'O') {
+                            emoji = '❌';
+                            style = ButtonStyle.Danger;
+                        }
+
+                        row.addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`ttt_move_${position}_${gameId}`)
+                                .setEmoji(emoji)
+                                .setStyle(style)
+                                .setDisabled(disabled || cell !== '')
+                        );
+                    }
+                    rows.push(row);
+                }
+                return rows;
+            }
+
+            // Helper function to check for winner
+            function checkTicTacToeWinner(board) {
+                const winPatterns = [
+                    [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
+                    [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
+                    [0, 4, 8], [2, 4, 6]             // Diagonals
+                ];
+
+                for (const pattern of winPatterns) {
+                    const [a, b, c] = pattern;
+                    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                        return board[a]; // Returns 'X' or 'O'
+                    }
+                }
+
+                return null; // No winner yet
+            }
+
+
+            ////////////////////////
 
 
             // Lottery buttons
