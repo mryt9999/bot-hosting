@@ -1,6 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const profileModel = require('../../models/profileSchema');
-const dbUtils = require('../../utils/dbUtils');
+const profileModel = require('../../../models/profileSchema');
+const dbUtils = require('../../../utils/dbUtils');
 
 // Global game trackers
 const activeRPSGames = new Map();
@@ -123,7 +123,7 @@ async function handleRPSChallenge(interaction) {
 
     // Trigger balance change events
     try {
-        const balanceChangeEvent = require('../balanceChange');
+        const balanceChangeEvent = require('../../balanceChange');
         const challengerMember = await interaction.guild.members.fetch(challengerId);
         const opponentMember = await interaction.guild.members.fetch(opponentId);
         balanceChangeEvent.execute(challengerMember);
@@ -284,7 +284,7 @@ async function handleRPSChoice(interaction) {
                 await opponentProfile.save();
 
                 try {
-                    const balanceChangeEvent = require('../balanceChange');
+                    const balanceChangeEvent = require('../../balanceChange');
                     const challengerMember = await interaction.guild.members.fetch(challengerId);
                     const opponentMember = await interaction.guild.members.fetch(opponentId);
                     balanceChangeEvent.execute(challengerMember);
@@ -317,7 +317,7 @@ async function handleRPSChoice(interaction) {
                 await winnerProfile.save();
 
                 try {
-                    const balanceChangeEvent = require('../balanceChange');
+                    const balanceChangeEvent = require('../../balanceChange');
                     const winnerMember = await interaction.guild.members.fetch(winnerId);
                     balanceChangeEvent.execute(winnerMember);
                 } catch (err) {
