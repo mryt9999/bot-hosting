@@ -1,43 +1,19 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const profileModel = require('../../../models/profileSchema');
 const dbUtils = require('../../../utils/dbUtils');
+const { clearChallengeTimeout } = require('./challengeTimeoutHandler');
+const { saveActiveGame, removeActiveGame } = require('../../../utils/gameRecovery');
 
 // Global game trackers
 const activeRPSGames = new Map();
 const pendingRPSChallenges = new Map();
 
 /**
- * Setup challenge expiration timer
- */
-function setupChallengeExpiration(interaction, challengeKey, pendingMap, gameType) {
-    setTimeout(async () => {
-        if (pendingMap.has(challengeKey)) {
-            pendingMap.delete(challengeKey);
-
-            const expireEmbed = new EmbedBuilder()
-                .setTitle(`⏱️ ${gameType} Challenge Expired`)
-                .setDescription('The challenge was not accepted within 1 minute.')
-                .setColor(0x95A5A6)
-                .setTimestamp();
-
-            try {
-                await interaction.editReply({
-                    embeds: [expireEmbed],
-                    components: []
-                });
-            } catch (error) {
-                console.error('Failed to update expired challenge:', error);
-            }
-        }
-    }, 60000); // 1 minute
-}
-
-/**
  * Handles RPS challenge accept/decline buttons
  */
 async function handleRPSChallenge(interaction) {
     const parts = interaction.customId.split('_');
-    const action = parts[1]; // This gets 'accept' or 'decline'
+    const action = parts[1];
     const challengerId = parts[2];
     const opponentId = parts[3];
     const betAmount = action === 'accept' ? parseInt(parts[4]) : 0;
@@ -50,6 +26,9 @@ async function handleRPSChallenge(interaction) {
         });
     }
 
+    // Clear the timeout
+    clearChallengeTimeout('rps', challengerId, opponentId, interaction.message.id);
+
     // Check if this challenge was already responded to or expired
     if (!pendingRPSChallenges.has(challengeKey)) {
         return await interaction.reply({
@@ -58,7 +37,7 @@ async function handleRPSChallenge(interaction) {
         });
     }
 
-    // Remove from pending challenges BEFORE any other action
+    // Remove from pending challenges
     pendingRPSChallenges.delete(challengeKey);
 
     if (action === 'decline') {
@@ -75,7 +54,6 @@ async function handleRPSChallenge(interaction) {
         return;
     }
 
-    // ACCEPT LOGIC - action === 'accept'
     // Check if either player is already in an active game
     const existingGame = Array.from(activeRPSGames.values()).find(
         game => game.challengerId === challengerId ||
@@ -93,6 +71,7 @@ async function handleRPSChallenge(interaction) {
         return;
     }
 
+    // Use dbUtils to ensure profiles exist
     const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
     const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
@@ -114,7 +93,7 @@ async function handleRPSChallenge(interaction) {
         return;
     }
 
-    // DEDUCT BETS IMMEDIATELY
+    // Deduct bets immediately
     challengerProfile.balance -= betAmount;
     opponentProfile.balance -= betAmount;
 
@@ -138,8 +117,22 @@ async function handleRPSChallenge(interaction) {
         opponentId,
         betAmount,
         choices: {},
-        messageId: interaction.message.id
+        messageId: interaction.message.id,
+        betsDeducted: true
     });
+
+    // Save to database for crash recovery
+    await saveActiveGame(
+        gameId,
+        'rps',
+        interaction.guild.id,
+        challengerId,
+        opponentId,
+        betAmount,
+        interaction.message.id,
+        interaction.channel.id,
+        { choices: {} }
+    );
 
     const choiceButtons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -159,13 +152,21 @@ async function handleRPSChallenge(interaction) {
             .setEmoji('✂️')
     );
 
+    const forfeitButton = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`rps_forfeit_${gameId}`)
+            .setLabel('Forfeit')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('🏳️')
+    );
+
     const gameEmbed = new EmbedBuilder()
         .setTitle('🪨📄✂️ Make Your Choice!')
-        .setDescription('Both players, choose your weapon!')
+        .setDescription(`Both players, choose your weapon!\n\n*Bets of ${betAmount.toLocaleString()} points have been deducted from both players.*`)
         .addFields(
             { name: 'Challenger', value: `<@${challengerId}> - ⏳ Waiting...`, inline: true },
             { name: 'Opponent', value: `<@${opponentId}> - ⏳ Waiting...`, inline: true },
-            { name: 'Bet', value: `${betAmount.toLocaleString()} points each`, inline: false }
+            { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
         )
         .setColor(0xF39C12)
         .setFooter({ text: 'You have 30 seconds to choose!' })
@@ -174,7 +175,7 @@ async function handleRPSChallenge(interaction) {
     await interaction.update({
         content: `<@${challengerId}> vs <@${opponentId}>`,
         embeds: [gameEmbed],
-        components: [choiceButtons]
+        components: [choiceButtons, forfeitButton]
     });
 
     setTimeout(() => {
@@ -210,7 +211,6 @@ async function handleRPSChoice(interaction) {
 
     const { challengerId, opponentId, betAmount, messageId } = game;
 
-    // Verify this interaction is for the correct message
     if (interaction.message.id !== messageId) {
         return await interaction.reply({
             content: '❌ This game belongs to a different message.',
@@ -242,152 +242,216 @@ async function handleRPSChoice(interaction) {
     const challengerReady = !!game.choices[challengerId];
     const opponentReady = !!game.choices[opponentId];
 
-    const updatedEmbed = new EmbedBuilder()
-        .setTitle('🪨📄✂️ Make Your Choice!')
-        .setDescription('Both players, choose your weapon!')
+    // If both players haven't chosen yet, just update the waiting status
+    if (!challengerReady || !opponentReady) {
+        const updatedEmbed = new EmbedBuilder()
+            .setTitle('🪨📄✂️ Make Your Choice!')
+            .setDescription('Both players, choose your weapon!')
+            .addFields(
+                { name: 'Challenger', value: `<@${challengerId}> - ${challengerReady ? '✅ Ready' : '⏳ Waiting...'}`, inline: true },
+                { name: 'Opponent', value: `<@${opponentId}> - ${opponentReady ? '✅ Ready' : '⏳ Waiting...'}`, inline: true },
+                { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
+            )
+            .setColor(0xF39C12)
+            .setFooter({ text: 'You have 30 seconds to choose!' })
+            .setTimestamp();
+
+        await interaction.message.edit({ embeds: [updatedEmbed] });
+        return;
+    }
+
+    // Both players have chosen - determine winner and update the SAME message
+    const challengerChoice = game.choices[challengerId];
+    const opponentChoice = game.choices[opponentId];
+
+    let winnerId = null;
+    let resultText = '';
+
+    if (challengerChoice === opponentChoice) {
+        // TIE - REFUND BOTH
+        resultText = '🤝 It\'s a tie! Bets refunded.';
+
+        const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+        const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
+
+        challengerProfile.balance += betAmount;
+        opponentProfile.balance += betAmount;
+
+        await challengerProfile.save();
+        await opponentProfile.save();
+
+        try {
+            const balanceChangeEvent = require('../../balanceChange');
+            const challengerMember = await interaction.guild.members.fetch(challengerId);
+            const opponentMember = await interaction.guild.members.fetch(opponentId);
+            balanceChangeEvent.execute(challengerMember);
+            balanceChangeEvent.execute(opponentMember);
+        } catch (err) {
+            console.error('Failed to trigger balance change event:', err);
+        }
+    } else if (
+        (challengerChoice === 'rock' && opponentChoice === 'scissors') ||
+        (challengerChoice === 'paper' && opponentChoice === 'rock') ||
+        (challengerChoice === 'scissors' && opponentChoice === 'paper')
+    ) {
+        winnerId = challengerId;
+        resultText = `🎉 <@${challengerId}> wins ${(betAmount * 2).toLocaleString()} points!`;
+    } else {
+        winnerId = opponentId;
+        resultText = `🎉 <@${opponentId}> wins ${(betAmount * 2).toLocaleString()} points!`;
+    }
+
+    if (winnerId) {
+        const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
+        winnerProfile.balance += betAmount * 2;
+        await winnerProfile.save();
+
+        try {
+            const balanceChangeEvent = require('../../balanceChange');
+            const winnerMember = await interaction.guild.members.fetch(winnerId);
+            balanceChangeEvent.execute(winnerMember);
+        } catch (err) {
+            console.error('Failed to trigger balance change event:', err);
+        }
+    }
+
+    const choiceEmojis = {
+        rock: '🪨',
+        paper: '📄',
+        scissors: '✂️'
+    };
+
+    const challengerUser = await interaction.client.users.fetch(challengerId);
+    const opponentUser = await interaction.client.users.fetch(opponentId);
+
+    const resultEmbed = new EmbedBuilder()
+        .setTitle('🪨📄✂️ Rock Paper Scissors Results')
+        .setDescription(resultText)
         .addFields(
-            { name: 'Challenger', value: `<@${challengerId}> - ${challengerReady ? '✅ Ready' : '⏳ Waiting...'}`, inline: true },
-            { name: 'Opponent', value: `<@${opponentId}> - ${opponentReady ? '✅ Ready' : '⏳ Waiting...'}`, inline: true },
-            { name: 'Bet', value: `${betAmount.toLocaleString()} points each`, inline: false }
+            { name: challengerUser.username, value: `${choiceEmojis[challengerChoice]} ${challengerChoice}`, inline: true },
+            { name: 'VS', value: '⚔️', inline: true },
+            { name: opponentUser.username, value: `${choiceEmojis[opponentChoice]} ${opponentChoice}`, inline: true }
         )
-        .setColor(0xF39C12)
-        .setFooter({ text: 'You have 30 seconds to choose!' })
+        .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
         .setTimestamp();
 
-    await interaction.message.edit({ embeds: [updatedEmbed] });
+    if (winnerId) {
+        resultEmbed.addFields({
+            name: '💰 Prize',
+            value: `${(betAmount * 2).toLocaleString()} points`,
+            inline: false
+        });
+    }
 
-    if (challengerReady && opponentReady) {
-        const challengerChoice = game.choices[challengerId];
-        const opponentChoice = game.choices[opponentId];
+    // Edit the SAME message instead of creating a new one
+    await interaction.message.edit({
+        content: `<@${challengerId}> vs <@${opponentId}>`,
+        embeds: [resultEmbed],
+        components: []
+    });
 
-        let winnerId = null;
-        let resultText = '';
-
-        if (challengerChoice === opponentChoice) {
-            // TIE - REFUND BOTH
-            resultText = '# 🤝 It\'s a tie! Bets refunded.';
-
-            const challengerProfile = await profileModel.findOne({
-                userId: challengerId,
-                serverID: interaction.guild.id
-            });
-            const opponentProfile = await profileModel.findOne({
-                userId: opponentId,
-                serverID: interaction.guild.id
-            });
-
-            if (challengerProfile && opponentProfile) {
-                challengerProfile.balance += betAmount;
-                opponentProfile.balance += betAmount;
-
-                await challengerProfile.save();
-                await opponentProfile.save();
-
-                try {
-                    const balanceChangeEvent = require('../../balanceChange');
-                    const challengerMember = await interaction.guild.members.fetch(challengerId);
-                    const opponentMember = await interaction.guild.members.fetch(opponentId);
-                    balanceChangeEvent.execute(challengerMember);
-                    balanceChangeEvent.execute(opponentMember);
-                } catch (err) {
-                    console.error('Failed to trigger balance change event:', err);
-                }
-            }
-        } else if (
-            (challengerChoice === 'rock' && opponentChoice === 'scissors') ||
-            (challengerChoice === 'paper' && opponentChoice === 'rock') ||
-            (challengerChoice === 'scissors' && opponentChoice === 'paper')
-        ) {
-            winnerId = challengerId;
-            resultText = `# 🎉 <@${challengerId}> wins!`;
-        } else {
-            winnerId = opponentId;
-            resultText = `# 🎉 <@${opponentId}> wins!`;
-        }
-
-        if (winnerId) {
-            const winnerProfile = await profileModel.findOne({
-                userId: winnerId,
-                serverID: interaction.guild.id
-            });
-
-            if (winnerProfile) {
-                // Winner gets 2x bet (their money back + opponent's bet)
-                winnerProfile.balance += betAmount * 2;
-                await winnerProfile.save();
-
-                try {
-                    const balanceChangeEvent = require('../../balanceChange');
-                    const winnerMember = await interaction.guild.members.fetch(winnerId);
-                    balanceChangeEvent.execute(winnerMember);
-                } catch (err) {
-                    console.error('Failed to trigger balance change event:', err);
-                }
-            }
-        }
-
-        const choiceEmojis = {
-            rock: '🪨',
-            paper: '📄',
-            scissors: '✂️'
-        };
-
-        // Fetch user objects to get usernames
-        const challengerUser = await interaction.client.users.fetch(challengerId);
-        const opponentUser = await interaction.client.users.fetch(opponentId);
-
-        const resultEmbed = new EmbedBuilder()
-            .setTitle('🪨📄✂️ Rock Paper Scissors Results')
-            .setDescription(resultText)
+    // Log to games channel
+    const rpsLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+    if (rpsLogsChannel) {
+        const logEmbed = new EmbedBuilder()
+            .setTitle('🪨📄✂️ RPS Game Result')
             .addFields(
-                { name: challengerUser.username, value: `${choiceEmojis[challengerChoice]} ${challengerChoice}`, inline: true },
-                { name: 'VS', value: '⚔️', inline: true },
-                { name: opponentUser.username, value: `${choiceEmojis[opponentChoice]} ${opponentChoice}`, inline: true }
+                { name: 'Challenger', value: `<@${challengerId}> (${challengerUser.username})`, inline: true },
+                { name: 'Opponent', value: `<@${opponentId}> (${opponentUser.username})`, inline: true },
+                { name: 'Challenger Choice', value: `${choiceEmojis[challengerChoice]} ${challengerChoice}`, inline: true },
+                { name: 'Opponent Choice', value: `${choiceEmojis[opponentChoice]} ${opponentChoice}`, inline: true },
+                { name: 'Result', value: resultText, inline: false },
+                { name: 'Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
             )
             .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
             .setTimestamp();
 
-        if (winnerId) {
-            resultEmbed.addFields({
-                name: '💰 Prize',
-                value: `${(betAmount * 2).toLocaleString()} points`,
-                inline: false
-            });
-        }
-
-        await interaction.message.edit({
-            embeds: [resultEmbed],
-            components: []
-        });
-
-        // Log the result to rock paper scissors log channel
-        const rpsLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
-        if (rpsLogsChannel) {
-            const logEmbed = new EmbedBuilder()
-                .setTitle('🪨📄✂️ Rock Paper Scissors Game Result')
-                .addFields(
-                    { name: 'Challenger', value: `<@${challengerId}> (${challengerUser.username})`, inline: true },
-                    { name: 'Opponent', value: `<@${opponentId}> (${opponentUser.username})`, inline: true },
-                    { name: 'Challenger Choice', value: `${choiceEmojis[challengerChoice]} ${challengerChoice}`, inline: true },
-                    { name: 'Opponent Choice', value: `${choiceEmojis[opponentChoice]} ${opponentChoice}`, inline: true },
-                    { name: 'Result', value: resultText, inline: false },
-                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points`, inline: true },
-                    { name: 'Total Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'N/A', inline: true }
-                )
-                .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
-                .setTimestamp();
-
-            await rpsLogsChannel.send({ embeds: [logEmbed] });
-        }
-
-        activeRPSGames.delete(gameId);
+        await rpsLogsChannel.send({ embeds: [logEmbed] });
     }
+
+    activeRPSGames.delete(gameId);
+    await removeActiveGame(gameId); // Remove from DB
+}
+
+/**
+ * Handles RPS forfeit
+ */
+async function handleRPSForfeit(interaction) {
+    const gameId = interaction.customId.replace('rps_forfeit_', '');
+
+    const game = activeRPSGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: '❌ This game has expired or already finished.',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
+
+    const { challengerId, opponentId, betAmount } = game;
+
+    if (interaction.user.id !== challengerId && interaction.user.id !== opponentId) {
+        return await interaction.reply({
+            content: '❌ You are not part of this game.',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
+
+    const loserId = interaction.user.id;
+    const winnerId = loserId === challengerId ? opponentId : challengerId;
+
+    // Award winnings to winner
+    const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
+    winnerProfile.balance += betAmount * 2;
+    await winnerProfile.save();
+
+    // Trigger balance change event
+    try {
+        const balanceChangeEvent = require('../../balanceChange');
+        const winnerMember = await interaction.guild.members.fetch(winnerId);
+        balanceChangeEvent.execute(winnerMember);
+    } catch (err) {
+        console.error('Failed to trigger balance change event:', err);
+    }
+
+    const resultEmbed = new EmbedBuilder()
+        .setTitle('🏳️ Rock Paper Scissors - Forfeit')
+        .setDescription(
+            `<@${loserId}> has forfeited the game!\n\n` +
+            `# 🎉 <@${winnerId}> wins by forfeit!\n\n` +
+            `**Prize:** ${(betAmount * 2).toLocaleString()} points`
+        )
+        .setColor(0x95A5A6)
+        .setTimestamp();
+
+    await interaction.update({
+        embeds: [resultEmbed],
+        components: []
+    });
+
+    // Log to games channel
+    const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+    if (gamesLogsChannel) {
+        const logEmbed = new EmbedBuilder()
+            .setTitle('🏳️ RPS Game - Forfeit')
+            .addFields(
+                { name: 'Forfeited By', value: `<@${loserId}>`, inline: true },
+                { name: 'Winner', value: `<@${winnerId}>`, inline: true },
+                { name: 'Prize', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
+            )
+            .setColor(0x95A5A6)
+            .setTimestamp();
+
+        await gamesLogsChannel.send({ embeds: [logEmbed] });
+    }
+
+    activeRPSGames.delete(gameId);
+    await removeActiveGame(gameId); // Remove from DB
 }
 
 module.exports = {
     activeRPSGames,
     pendingRPSChallenges,
-    setupChallengeExpiration,
     handleRPSChallenge,
-    handleRPSChoice
+    handleRPSChoice,
+    handleRPSForfeit
 };

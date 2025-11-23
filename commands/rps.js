@@ -1,113 +1,96 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ComponentType } = require('discord.js');
-const profileModel = require('../models/profileSchema');
-const dbUtils = require('../utils/dbUtils');
+const { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { startChallengeTimeout } = require('../events/handlers/games/challengeTimeoutHandler');
+const { pendingRPSChallenges } = require('../events/handlers/games/rpsHandler');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('rps')
         .setDescription('Challenge someone to Rock Paper Scissors')
         .addUserOption(option =>
-            option
-                .setName('opponent')
-                .setDescription('The player to challenge')
-                .setRequired(true)
-        )
+            option.setName('opponent')
+                .setDescription('The user you want to challenge')
+                .setRequired(true))
         .addIntegerOption(option =>
-            option
-                .setName('bet')
+            option.setName('bet')
                 .setDescription('Amount of points to bet')
                 .setRequired(true)
-                .setMinValue(10)
-        ),
-
-    async execute(interaction, profileData, opts = {}) {
+                .setMinValue(1)),
+    async execute(interaction, profileData) {
         try {
             const opponent = interaction.options.getUser('opponent');
             const betAmount = interaction.options.getInteger('bet');
-            const challenger = interaction.user;
 
-            // Validation checks
-            if (opponent.id === challenger.id) {
+            // Validation
+            if (opponent.bot) {
+                return await interaction.reply({
+                    content: '❌ You cannot challenge a bot!',
+                    flags: [MessageFlags.Ephemeral]
+                });
+            }
+
+            if (opponent.id === interaction.user.id) {
                 return await interaction.reply({
                     content: '❌ You cannot challenge yourself!',
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            if (opponent.bot) {
-                return await interaction.reply({
-                    content: '❌ You cannot challenge bots!',
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
-            // Check challenger balance
             if (profileData.balance < betAmount) {
                 return await interaction.reply({
-                    content: `❌ You need ${betAmount.toLocaleString()} points to make this bet. You have ${profileData.balance.toLocaleString()} points.`,
+                    content: `❌ You don't have enough points! Your balance: ${profileData.balance.toLocaleString()}`,
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            // Check opponent balance
-            const opponentProfile = await dbUtils.ensureProfile(opponent.id, interaction.guild.id);
-            if (opponentProfile.balance < betAmount) {
+            const challengeKey = `${interaction.user.id}_${opponent.id}`;
+            if (pendingRPSChallenges.has(challengeKey)) {
                 return await interaction.reply({
-                    content: `❌ ${opponent.username} doesn't have enough points for this bet. They have ${opponentProfile.balance.toLocaleString()} points.`,
+                    content: '❌ You already have a pending challenge with this player!',
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            // Create challenge embed
+            pendingRPSChallenges.set(challengeKey, true);
+
             const challengeEmbed = new EmbedBuilder()
-                .setTitle('🪨📄✂️ Rock Paper Scissors Challenge!')
-                .setDescription(`${challenger} challenges ${opponent} to RPS!`)
+                .setTitle('🪨📄✂️ Rock Paper Scissors Challenge')
+                .setDescription(`<@${interaction.user.id}> challenges <@${opponent.id}> to Rock Paper Scissors!`)
                 .addFields(
-                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
-                    { name: 'Total Pot', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
+                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points`, inline: true },
+                    { name: 'Time Limit', value: '60 seconds to accept', inline: true }
                 )
                 .setColor(0xF39C12)
                 .setTimestamp();
 
-            const acceptButton = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`rps_accept_${challenger.id}_${opponent.id}_${betAmount}`)
-                    .setLabel('Accept Challenge')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('✅'),
-                new ButtonBuilder()
-                    .setCustomId(`rps_decline_${challenger.id}_${opponent.id}`)
-                    .setLabel('Decline')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('❌')
-            );
+            const buttons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`rps_accept_${interaction.user.id}_${opponent.id}_${betAmount}`)
+                        .setLabel('Accept')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('✅'),
+                    new ButtonBuilder()
+                        .setCustomId(`rps_decline_${interaction.user.id}_${opponent.id}`)
+                        .setLabel('Decline')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('❌')
+                );
 
-            await interaction.reply({
-                content: `${opponent}`,
+            const challengeMessage = await interaction.reply({
+                content: `<@${opponent.id}>`,
                 embeds: [challengeEmbed],
-                components: [acceptButton]
+                components: [buttons],
+                fetchReply: true
             });
 
-            // Track this pending challenge
-            const { pendingRPSChallenges } = require('../events/interactionCreate');
-            const challengeKey = `${challenger.id}_${opponent.id}`;
-            pendingRPSChallenges.set(challengeKey, {
-                challengerId: challenger.id,
-                opponentId: opponent.id,
-                betAmount,
-                timestamp: Date.now()
-            });
-
-            // Auto-expire after 30 seconds
-            setTimeout(() => {
-                pendingRPSChallenges.delete(challengeKey);
-            }, 30000);
+            // Start the 1-minute timeout
+            startChallengeTimeout(challengeMessage, 'rps', interaction.user.id, opponent.id);
 
         } catch (error) {
             console.error('Error in rps command:', error);
             const replyMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
             await interaction[replyMethod]({
-                content: 'An error occurred while processing the RPS challenge.',
+                content: '❌ An error occurred while creating the challenge.',
                 flags: [MessageFlags.Ephemeral]
             });
         }

@@ -4,11 +4,19 @@ const mongoose = require('mongoose');
 const { roleRequirements } = require('../globalValues.json');
 const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans } = require('../commands/loan');
 const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker');
+const { recoverCrashedGames } = require('../utils/gameRecovery');
 
 const lotteryModel = require('../models/lotterySchema');
-const { scheduleRaffleEnd, createNumberLottery, createRaffleLottery, archiveLottery } = require('../utils/lotteryManager');
+const {
+    scheduleRaffleEnd,
+    scheduleAnimalRaceEnd,
+    createNumberLottery,
+    createRaffleLottery,
+    createAnimalLottery,
+    archiveLottery
+} = require('../utils/lotteryManager');
 
-const LOTTERY_ARCHIVAL_DELAY = 60 * 60 * 1000; // 1 hour in milliseconds
+const LOTTERY_ARCHIVAL_DELAY = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
 module.exports = {
     name: Events.ClientReady,
@@ -24,6 +32,9 @@ module.exports = {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         initializeArcaneRoleChecker(client);
+
+        // Recover any crashed games from previous sessions
+        await recoverCrashedGames(client);
 
         // Reschedule active loans
         try {
@@ -49,7 +60,7 @@ module.exports = {
             }
         }, 60 * 60 * 1000);
 
-        // Reschedule active raffle lotteries
+        // Reschedule active raffle and animal lotteries
         try {
             const activeRaffles = await lotteryModel.find({
                 type: 'raffle',
@@ -62,8 +73,20 @@ module.exports = {
                     console.log(`[Lottery] Rescheduled raffle lottery ${raffle._id}`);
                 }
             }
+
+            const activeAnimalRaces = await lotteryModel.find({
+                type: 'animal',
+                status: 'active'
+            });
+
+            for (const race of activeAnimalRaces) {
+                if (race.endsAt > Date.now()) {
+                    scheduleAnimalRaceEnd(race._id, race.endsAt, client);
+                    console.log(`[Lottery] Rescheduled animal race lottery ${race._id}`);
+                }
+            }
         } catch (error) {
-            console.error('Error rescheduling raffle lotteries:', error);
+            console.error('Error rescheduling lotteries:', error);
         }
 
         // Recover unarchived lotteries (bot was offline during archival time)
@@ -82,7 +105,7 @@ module.exports = {
 
                 const timeSinceEnd = Date.now() - (lottery.endedAt || 0);
 
-                if (timeSinceEnd >= 60 * 60 * 1000) {
+                if (timeSinceEnd >= LOTTERY_ARCHIVAL_DELAY) {
                     // Should have been archived - do it now
                     console.log(`[Lottery] Archiving lottery that ended during downtime: ${lottery._id}`);
 
@@ -94,7 +117,7 @@ module.exports = {
                     await archiveLottery(lottery, client, winnerId, winningNumber);
                 } else {
                     // Schedule for remaining time
-                    const delay = 60 * 60 * 1000 - timeSinceEnd;
+                    const delay = LOTTERY_ARCHIVAL_DELAY - timeSinceEnd;
                     console.log(`[Lottery] Scheduling delayed archival for ${lottery._id} in ${Math.round(delay / 1000)}s`);
 
                     const winnerId = lottery.winnerId;
@@ -151,6 +174,25 @@ module.exports = {
                         }
                     } else {
                         console.log(`[Lottery] Raffle lottery already active: ${activeRaffleLottery._id}`);
+                    }
+
+                    // Check for active animal race lottery
+                    const activeAnimalLottery = await lotteryModel.findOne({
+                        serverID: guildId,
+                        type: 'animal',
+                        status: 'active'
+                    });
+
+                    if (!activeAnimalLottery) {
+                        console.log('[Lottery] No active animal race lottery found, creating one...');
+                        const created = await createAnimalLottery(client, guildId);
+                        if (created) {
+                            console.log(`[Lottery] ✅ Created animal race lottery: ${created._id}`);
+                        } else {
+                            console.log('[Lottery] ❌ Failed to create animal race lottery (may be on cooldown)');
+                        }
+                    } else {
+                        console.log(`[Lottery] Animal race lottery already active: ${activeAnimalLottery._id}`);
                     }
                 }
             }, 5000);

@@ -7,7 +7,7 @@ const lotterySchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['number', 'raffle'],
+        enum: ['number', 'raffle', 'animal'], // Added 'animal'
         required: true
     },
     status: {
@@ -23,43 +23,53 @@ const lotterySchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    endedAt: {
-        type: Number,
-        default: null
-    },
     endsAt: {
-        type: Number,
-        default: null
+        type: Number
+    },
+    endedAt: {
+        type: Number
     },
     channelId: {
         type: String,
         required: true
     },
     messageId: {
-        type: String,
-        default: null
+        type: String
     },
     logThreadId: {
-        type: String,
-        default: null
+        type: String
     },
-    winnerId: {
-        type: String,
-        default: null
-    },
+    // For number lottery
     winningNumber: {
-        type: Number,
-        default: null
+        type: Number
     },
     usedNumbers: {
         type: [Number],
         default: []
     },
+    // For animal lottery
+    winningAnimal: {
+        type: String
+    },
+    availableAnimals: {
+        type: [String],
+        default: []
+    },
+    // Participants array
     participants: [{
         userId: String,
-        number: Number,
-        joinedAt: Number
+        username: String,
+        timestamp: Number,
+        number: Number, // For number lottery
+        animal: String  // For animal lottery
     }],
+    winnerId: {
+        type: String
+    },
+    winnerIds: {
+        type: [String],
+        default: []
+    },
     archived: {
         type: Boolean,
         default: false

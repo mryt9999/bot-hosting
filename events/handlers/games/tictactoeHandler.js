@@ -1,52 +1,36 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const profileModel = require('../../../models/profileSchema');
-
-// Initialize global game tracker
-if (!global.activeTTTGames) {
-    global.activeTTTGames = new Map();
-}
+const dbUtils = require('../../../utils/dbUtils');
+const { clearChallengeTimeout } = require('./challengeTimeoutHandler');
+const { saveActiveGame, removeActiveGame } = require('../../../utils/gameRecovery');
 
 /**
  * Helper function to create Tic Tac Toe board buttons
  */
-function createTicTacToeBoard(gameId, board, disabled = false) {
+function createTTTBoard(gameId, board, disabled = false) {
     const rows = [];
-
-    // Create 3x3 grid
     for (let row = 0; row < 3; row++) {
         const actionRow = new ActionRowBuilder();
         for (let col = 0; col < 3; col++) {
-            const index = row * 3 + col;
-            const cell = board[index];
-
-            let emoji = '⬜';
-            let style = ButtonStyle.Secondary;
-
-            if (cell === 'X') {
-                emoji = '❌';
-                style = ButtonStyle.Primary;
-            } else if (cell === 'O') {
-                emoji = '⭕';
-                style = ButtonStyle.Danger;
-            }
+            const position = row * 3 + col;
+            const cell = board[position];
 
             actionRow.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`ttt_move_${index}_${gameId}`)
-                    .setEmoji(emoji)
-                    .setStyle(style)
+                    .setCustomId(`ttt_move_${position}_${gameId}`)
+                    .setLabel(cell || '⠀')
+                    .setStyle(cell === 'X' ? ButtonStyle.Primary : cell === 'O' ? ButtonStyle.Danger : ButtonStyle.Secondary)
                     .setDisabled(disabled || cell !== '')
             );
         }
         rows.push(actionRow);
     }
 
-    // Add forfeit button row (only if game is active)
+    // Add forfeit button if game is active
     if (!disabled) {
         const forfeitRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`ttt_forfeit_${gameId}`)
-                .setLabel('Forfeit Game')
+                .setLabel('Forfeit')
                 .setStyle(ButtonStyle.Danger)
                 .setEmoji('🏳️')
         );
@@ -57,29 +41,33 @@ function createTicTacToeBoard(gameId, board, disabled = false) {
 }
 
 /**
- * Helper function to check for winner
+ * Helper function to check for Tic Tac Toe winner
  */
-function checkTicTacToeWinner(board) {
+function checkTTTWinner(board) {
     const winPatterns = [
         [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
         [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
-        [0, 4, 8], [2, 4, 6]             // Diagonals
+        [0, 4, 8], [2, 4, 6] // Diagonals
     ];
 
     for (const pattern of winPatterns) {
         const [a, b, c] = pattern;
         if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-            return board[a]; // Returns 'X' or 'O'
+            return board[a];
         }
     }
 
-    return null; // No winner yet
+    if (board.every(cell => cell !== '')) {
+        return 'tie';
+    }
+
+    return null;
 }
 
 /**
  * Handles Tic Tac Toe challenge accept/decline
  */
-async function handleTicTacToeChallenge(interaction) {
+async function handleTTTChallenge(interaction) {
     const parts = interaction.customId.split('_');
     const action = parts[1];
     const challengerId = parts[2];
@@ -93,9 +81,12 @@ async function handleTicTacToeChallenge(interaction) {
         });
     }
 
+    // Clear the timeout
+    clearChallengeTimeout('ttt', challengerId, opponentId, interaction.message.id);
+
     if (action === 'decline') {
         const declineEmbed = new EmbedBuilder()
-            .setTitle('⭕ Challenge Declined')
+            .setTitle('❌ Challenge Declined')
             .setDescription(`<@${opponentId}> declined the Tic Tac Toe challenge.`)
             .setColor(0x95A5A6)
             .setTimestamp();
@@ -107,32 +98,9 @@ async function handleTicTacToeChallenge(interaction) {
         return;
     }
 
-    // Verify balances and ensure profiles exist
-    let challengerProfile = await profileModel.findOne({
-        userId: challengerId,
-        serverID: interaction.guild.id
-    });
-    let opponentProfile = await profileModel.findOne({
-        userId: opponentId,
-        serverID: interaction.guild.id
-    });
-
-    // Create profiles if they don't exist
-    if (!challengerProfile) {
-        challengerProfile = await profileModel.create({
-            userId: challengerId,
-            serverID: interaction.guild.id,
-            balance: 100
-        });
-    }
-
-    if (!opponentProfile) {
-        opponentProfile = await profileModel.create({
-            userId: opponentId,
-            serverID: interaction.guild.id,
-            balance: 100
-        });
-    }
+    // Use dbUtils to ensure profiles exist
+    const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+    const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
     if (challengerProfile.balance < betAmount) {
         await interaction.update({
@@ -152,10 +120,9 @@ async function handleTicTacToeChallenge(interaction) {
         return;
     }
 
-    // OPTION 1: Deduct bets immediately
+    // Deduct bets
     challengerProfile.balance -= betAmount;
     opponentProfile.balance -= betAmount;
-
     await challengerProfile.save();
     await opponentProfile.save();
 
@@ -177,27 +144,46 @@ async function handleTicTacToeChallenge(interaction) {
         global.activeTTTGames = new Map();
     }
 
+    const gameState = {
+        board: Array(9).fill(''),
+        currentTurn: challengerId,
+        xPlayer: challengerId,
+        oPlayer: opponentId
+    };
+
     global.activeTTTGames.set(gameId, {
         challengerId,
         opponentId,
         betAmount,
-        board: ['', '', '', '', '', '', '', '', ''],
-        currentTurn: challengerId,
-        xPlayer: challengerId,
-        oPlayer: opponentId,
+        board: gameState.board,
+        currentTurn: gameState.currentTurn,
+        xPlayer: gameState.xPlayer,
+        oPlayer: gameState.oPlayer,
         messageId: interaction.message.id,
         betsDeducted: true
     });
 
-    // Create game board with forfeit option
-    const boardButtons = createTicTacToeBoard(gameId, global.activeTTTGames.get(gameId).board, false);
+    // Save to database for crash recovery
+    await saveActiveGame(
+        gameId,
+        'ttt',
+        interaction.guild.id,
+        challengerId,
+        opponentId,
+        betAmount,
+        interaction.message.id,
+        interaction.channel.id,
+        gameState
+    );
+
+    const boardButtons = createTTTBoard(gameId, gameState.board);
 
     const gameEmbed = new EmbedBuilder()
-        .setTitle('⭕ Tic Tac Toe')
-        .setDescription(`**Current Turn:** <@${challengerId}> (X)\n\n*Bets of ${betAmount.toLocaleString()} points have been deducted from both players.*`)
+        .setTitle('❌ Tic Tac Toe')
+        .setDescription(`**Current Turn:** <@${challengerId}> (❌)\n\n*Bets of ${betAmount.toLocaleString()} points have been deducted from both players.*`)
         .addFields(
-            { name: 'X Player', value: `<@${challengerId}>`, inline: true },
-            { name: 'O Player', value: `<@${opponentId}>`, inline: true },
+            { name: '❌ X Player', value: `<@${challengerId}>`, inline: true },
+            { name: '⭕ O Player', value: `<@${opponentId}>`, inline: true },
             { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
         )
         .setColor(0x3498DB)
@@ -213,7 +199,7 @@ async function handleTicTacToeChallenge(interaction) {
 /**
  * Handles Tic Tac Toe move
  */
-async function handleTicTacToeMove(interaction) {
+async function handleTTTMove(interaction) {
     const parts = interaction.customId.split('_');
     const position = parseInt(parts[2]);
     const gameId = parts.slice(3).join('_');
@@ -232,7 +218,6 @@ async function handleTicTacToeMove(interaction) {
 
     const { challengerId, opponentId, betAmount, board, currentTurn, xPlayer, oPlayer, messageId } = game;
 
-    // Verify correct message
     if (interaction.message.id !== messageId) {
         return await interaction.reply({
             content: '❌ This game belongs to a different message.',
@@ -240,7 +225,6 @@ async function handleTicTacToeMove(interaction) {
         });
     }
 
-    // Verify it's the player's turn
     if (interaction.user.id !== currentTurn) {
         return await interaction.reply({
             content: '❌ It\'s not your turn!',
@@ -248,7 +232,6 @@ async function handleTicTacToeMove(interaction) {
         });
     }
 
-    // Verify position is empty
     if (board[position] !== '') {
         return await interaction.reply({
             content: '❌ That position is already taken!',
@@ -261,28 +244,19 @@ async function handleTicTacToeMove(interaction) {
     board[position] = symbol;
 
     // Check for winner
-    const winner = checkTicTacToeWinner(board);
-    const isTie = !winner && board.every(cell => cell !== '');
+    const result = checkTTTWinner(board);
 
-    if (winner || isTie) {
-        // Game over - ADD winnings instead of deducting
-        if (winner) {
-            // winner is 'X' or 'O', need to get the actual user ID
-            const winnerId = winner === 'X' ? xPlayer : oPlayer;
+    if (result) {
+        let winnerId = null;
+        if (result === 'X') {
+            winnerId = xPlayer;
+        } else if (result === 'O') {
+            winnerId = oPlayer;
+        }
 
-            const winnerProfile = await profileModel.findOne({
-                userId: winnerId,
-                serverID: interaction.guild.id
-            });
-
-            if (!winnerProfile) {
-                console.error(`Winner profile not found for user ${winnerId}`);
-                return await interaction.reply({
-                    content: '❌ An error occurred while processing the game result.',
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
+        // Update balances
+        if (winnerId) {
+            const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
             winnerProfile.balance += betAmount * 2;
             await winnerProfile.save();
 
@@ -294,27 +268,12 @@ async function handleTicTacToeMove(interaction) {
                 console.error('Failed to trigger balance change event:', err);
             }
         } else {
-            // ADD THIS TIE REFUND LOGIC:
-            const challengerProfile = await profileModel.findOne({
-                userId: challengerId,
-                serverID: interaction.guild.id
-            });
-            const opponentProfile = await profileModel.findOne({
-                userId: opponentId,
-                serverID: interaction.guild.id
-            });
-
-            if (!challengerProfile || !opponentProfile) {
-                console.error('Player profile not found during tie refund');
-                return await interaction.reply({
-                    content: '❌ An error occurred while processing the refund.',
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
+            // Tie - refund bets
+            const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+            const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
             challengerProfile.balance += betAmount;
             opponentProfile.balance += betAmount;
-
             await challengerProfile.save();
             await opponentProfile.save();
 
@@ -329,33 +288,34 @@ async function handleTicTacToeMove(interaction) {
             }
         }
 
-        // Create result embed - use winnerId instead of winner
-        const winnerId = winner ? (winner === 'X' ? xPlayer : oPlayer) : null;
-
+        // Create result embed
         const resultEmbed = new EmbedBuilder()
-            .setTitle('⭕ Tic Tac Toe Results')
-            .setDescription(winnerId ? `# 🎉 <@${winnerId}> wins!\n\n**Prize:** ${(betAmount * 2).toLocaleString()} points` : '🤝 It\'s a tie!\n\nBets have been refunded.')
+            .setTitle('❌ Tic Tac Toe - Results')
+            .setDescription(
+                winnerId
+                    ? `🎉 **<@${winnerId}> wins ${(betAmount * 2).toLocaleString()} points!**`
+                    : '🤝 **It\'s a tie!** Bets refunded.'
+            )
             .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
             .setTimestamp();
 
-        const finalBoardButtons = createTicTacToeBoard(gameId, board, true);
+        const finalBoard = createTTTBoard(gameId, board, true);
 
         await interaction.update({
             embeds: [resultEmbed],
-            components: finalBoardButtons
+            components: finalBoard
         });
 
         // Log to games channel
         const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
         if (gamesLogsChannel) {
             const logEmbed = new EmbedBuilder()
-                .setTitle('⭕ Tic Tac Toe Game Result')
+                .setTitle('❌ Tic Tac Toe Game Result')
                 .addFields(
-                    { name: 'X Player', value: `<@${xPlayer}>`, inline: true },
-                    { name: 'O Player', value: `<@${oPlayer}>`, inline: true },
+                    { name: '❌ X Player', value: `<@${xPlayer}>`, inline: true },
+                    { name: '⭕ O Player', value: `<@${oPlayer}>`, inline: true },
                     { name: 'Result', value: winnerId ? `🎉 <@${winnerId}> wins!` : '🤝 Tie - Bets refunded', inline: false },
-                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
-                    { name: 'Total Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
+                    { name: 'Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
                 )
                 .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
                 .setTimestamp();
@@ -364,27 +324,28 @@ async function handleTicTacToeMove(interaction) {
         }
 
         global.activeTTTGames.delete(gameId);
+        await removeActiveGame(gameId);
     } else {
-        // Continue game - switch turns
+        // Continue game
         game.currentTurn = currentTurn === challengerId ? opponentId : challengerId;
-        const nextSymbol = game.currentTurn === xPlayer ? 'X (⭕)' : 'O (❌)';
+        const nextSymbol = game.currentTurn === xPlayer ? '❌' : '⭕';
 
         const updatedEmbed = new EmbedBuilder()
-            .setTitle('⭕ Tic Tac Toe')
+            .setTitle('❌ Tic Tac Toe')
             .setDescription(`**Current Turn:** <@${game.currentTurn}> (${nextSymbol})`)
             .addFields(
-                { name: '⭕ X Player', value: `<@${xPlayer}>`, inline: true },
-                { name: '❌ O Player', value: `<@${oPlayer}>`, inline: true },
-                { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                { name: '❌ X Player', value: `<@${xPlayer}>`, inline: true },
+                { name: '⭕ O Player', value: `<@${oPlayer}>`, inline: true },
+                { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
             )
             .setColor(0x3498DB)
             .setTimestamp();
 
-        const updatedBoardButtons = createTicTacToeBoard(gameId, board);
+        const updatedBoard = createTTTBoard(gameId, board);
 
         await interaction.update({
             embeds: [updatedEmbed],
-            components: updatedBoardButtons
+            components: updatedBoard
         });
     }
 }
@@ -392,7 +353,7 @@ async function handleTicTacToeMove(interaction) {
 /**
  * Handles Tic Tac Toe forfeit
  */
-async function handleTicTacToeForfeit(interaction) {
+async function handleTTTForfeit(interaction) {
     const gameId = interaction.customId.replace('ttt_forfeit_', '');
 
     if (!global.activeTTTGames) {
@@ -407,9 +368,8 @@ async function handleTicTacToeForfeit(interaction) {
         });
     }
 
-    const { challengerId, opponentId, betAmount, xPlayer, oPlayer, board } = game;
+    const { challengerId, opponentId, betAmount, board } = game;
 
-    // Verify it's a player in the game
     if (interaction.user.id !== challengerId && interaction.user.id !== opponentId) {
         return await interaction.reply({
             content: '❌ You are not in this game.',
@@ -417,25 +377,11 @@ async function handleTicTacToeForfeit(interaction) {
         });
     }
 
-    // Determine winner (the other player)
     const loserId = interaction.user.id;
     const winnerId = loserId === challengerId ? opponentId : challengerId;
 
     // Award winnings to winner
-    const winnerProfile = await profileModel.findOne({
-        userId: winnerId,
-        serverID: interaction.guild.id
-    });
-
-    // Add null check
-    if (!winnerProfile) {
-        console.error(`Winner profile not found for user ${winnerId}`);
-        return await interaction.reply({
-            content: '❌ An error occurred while processing the forfeit.',
-            flags: [MessageFlags.Ephemeral]
-        });
-    }
-
+    const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
     winnerProfile.balance += betAmount * 2;
     await winnerProfile.save();
 
@@ -448,7 +394,6 @@ async function handleTicTacToeForfeit(interaction) {
         console.error('Failed to trigger balance change event:', err);
     }
 
-    // Create forfeit result embed
     const resultEmbed = new EmbedBuilder()
         .setTitle('🏳️ Tic Tac Toe - Forfeit')
         .setDescription(
@@ -459,11 +404,11 @@ async function handleTicTacToeForfeit(interaction) {
         .setColor(0x95A5A6)
         .setTimestamp();
 
-    const finalBoardButtons = createTicTacToeBoard(gameId, board, true);
+    const finalBoard = createTTTBoard(gameId, board, true);
 
     await interaction.update({
         embeds: [resultEmbed],
-        components: finalBoardButtons
+        components: finalBoard
     });
 
     // Log to games channel
@@ -472,9 +417,8 @@ async function handleTicTacToeForfeit(interaction) {
         const logEmbed = new EmbedBuilder()
             .setTitle('🏳️ Tic Tac Toe - Forfeit')
             .addFields(
-                { name: 'X Player', value: `<@${xPlayer}>`, inline: true },
-                { name: 'O Player', value: `<@${oPlayer}>`, inline: true },
-                { name: 'Result', value: `<@${loserId}> forfeited - <@${winnerId}> wins!`, inline: false },
+                { name: 'Forfeited By', value: `<@${loserId}>`, inline: true },
+                { name: 'Winner', value: `<@${winnerId}>`, inline: true },
                 { name: 'Prize', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
             )
             .setColor(0x95A5A6)
@@ -484,10 +428,11 @@ async function handleTicTacToeForfeit(interaction) {
     }
 
     global.activeTTTGames.delete(gameId);
+    await removeActiveGame(gameId);
 }
 
 module.exports = {
-    handleTicTacToeChallenge,
-    handleTicTacToeMove,
-    handleTicTacToeForfeit
+    handleTTTChallenge,
+    handleTTTMove,
+    handleTTTForfeit
 };

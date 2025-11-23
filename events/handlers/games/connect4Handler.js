@@ -1,6 +1,8 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const profileModel = require('../../../models/profileSchema');
+const dbUtils = require('../../../utils/dbUtils');
 const { createConnect4Image } = require('../../../utils/connect4Canvas');
+const { clearChallengeTimeout } = require('./challengeTimeoutHandler');
+const { saveActiveGame, removeActiveGame } = require('../../../utils/gameRecovery');
 
 // Initialize global game tracker
 if (!global.activeC4Games) {
@@ -18,7 +20,7 @@ function createConnect4Board(gameId, board, disabled = false) {
     for (let col = 0; col < 4; col++) {
         columnRow1.addComponents(
             new ButtonBuilder()
-                .setCustomId(`c4_drop_${col}_${gameId}`)
+                .setCustomId(`c4_move_${col}_${gameId}`)
                 .setLabel(`${col + 1}`)
                 .setStyle(ButtonStyle.Primary)
                 .setDisabled(disabled || board[0][col] !== '')
@@ -30,7 +32,7 @@ function createConnect4Board(gameId, board, disabled = false) {
     for (let col = 4; col < 7; col++) {
         columnRow2.addComponents(
             new ButtonBuilder()
-                .setCustomId(`c4_drop_${col}_${gameId}`)
+                .setCustomId(`c4_move_${col}_${gameId}`)
                 .setLabel(`${col + 1}`)
                 .setStyle(ButtonStyle.Primary)
                 .setDisabled(disabled || board[0][col] !== '')
@@ -57,8 +59,6 @@ function createConnect4Board(gameId, board, disabled = false) {
  * Helper function for board display (legacy, returns empty string now)
  */
 function createConnect4BoardDisplay() {
-    // This function is no longer needed for text display
-    // Keeping it for backward compatibility if needed
     return '';
 }
 
@@ -67,10 +67,10 @@ function createConnect4BoardDisplay() {
  */
 function checkConnect4Winner(board, lastRow, lastCol) {
     const directions = [
-        { dr: 0, dc: 1 },  // Horizontal
-        { dr: 1, dc: 0 },  // Vertical
-        { dr: 1, dc: 1 },  // Diagonal down-right
-        { dr: 1, dc: -1 }  // Diagonal down-left
+        { dr: 0, dc: 1 },
+        { dr: 1, dc: 0 },
+        { dr: 1, dc: 1 },
+        { dr: 1, dc: -1 }
     ];
 
     const symbol = board[lastRow][lastCol];
@@ -80,19 +80,18 @@ function checkConnect4Winner(board, lastRow, lastCol) {
 
     for (const { dr, dc } of directions) {
         let count = 1;
-
-        // Check positive direction
         let r = lastRow + dr;
         let c = lastCol + dc;
+
         while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
             count++;
             r += dr;
             c += dc;
         }
 
-        // Check negative direction
         r = lastRow - dr;
         c = lastCol - dc;
+
         while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] === symbol) {
             count++;
             r -= dr;
@@ -100,11 +99,11 @@ function checkConnect4Winner(board, lastRow, lastCol) {
         }
 
         if (count >= 4) {
-            return symbol; // Returns 'R' or 'Y'
+            return symbol;
         }
     }
 
-    return null; // No winner yet
+    return null;
 }
 
 /**
@@ -124,6 +123,9 @@ async function handleConnect4Challenge(interaction) {
         });
     }
 
+    // Clear the timeout
+    clearChallengeTimeout('c4', challengerId, opponentId, interaction.message.id);
+
     if (action === 'decline') {
         const declineEmbed = new EmbedBuilder()
             .setTitle('🔴 Challenge Declined')
@@ -138,32 +140,9 @@ async function handleConnect4Challenge(interaction) {
         return;
     }
 
-    // Verify balances and ensure profiles exist
-    let challengerProfile = await profileModel.findOne({
-        userId: challengerId,
-        serverID: interaction.guild.id
-    });
-    let opponentProfile = await profileModel.findOne({
-        userId: opponentId,
-        serverID: interaction.guild.id
-    });
-
-    // Create profiles if they don't exist
-    if (!challengerProfile) {
-        challengerProfile = await profileModel.create({
-            userId: challengerId,
-            serverID: interaction.guild.id,
-            balance: 100
-        });
-    }
-
-    if (!opponentProfile) {
-        opponentProfile = await profileModel.create({
-            userId: opponentId,
-            serverID: interaction.guild.id,
-            balance: 100
-        });
-    }
+    // Use dbUtils to ensure profiles exist
+    const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+    const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
     if (challengerProfile.balance < betAmount) {
         await interaction.update({
@@ -208,23 +187,43 @@ async function handleConnect4Challenge(interaction) {
         global.activeC4Games = new Map();
     }
 
+    const gameState = {
+        board: Array(6).fill(null).map(() => Array(7).fill('')),
+        currentTurn: challengerId,
+        redPlayer: challengerId,
+        yellowPlayer: opponentId
+    };
+
     global.activeC4Games.set(gameId, {
         challengerId,
         opponentId,
         betAmount,
-        board: Array(6).fill(null).map(() => Array(7).fill('')),
-        currentTurn: challengerId,
-        redPlayer: challengerId,
-        yellowPlayer: opponentId,
+        board: gameState.board,
+        currentTurn: gameState.currentTurn,
+        redPlayer: gameState.redPlayer,
+        yellowPlayer: gameState.yellowPlayer,
         messageId: interaction.message.id,
         betsDeducted: true
     });
 
+    // Save to database for crash recovery
+    await saveActiveGame(
+        gameId,
+        'c4',
+        interaction.guild.id,
+        challengerId,
+        opponentId,
+        betAmount,
+        interaction.message.id,
+        interaction.channel.id,
+        gameState
+    );
+
     // Create board buttons with forfeit option
-    const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board, false);
+    const boardButtons = createConnect4Board(gameId, gameState.board, false);
 
     // Create board image
-    const boardImage = createConnect4Image(global.activeC4Games.get(gameId).board);
+    const boardImage = createConnect4Image(gameState.board);
 
     const gameEmbed = new EmbedBuilder()
         .setTitle('🔴 Connect 4')
@@ -271,7 +270,6 @@ async function handleConnect4Move(interaction) {
 
     const { challengerId, opponentId, betAmount, board, currentTurn, redPlayer, yellowPlayer, messageId } = game;
 
-    // Verify correct message
     if (interaction.message.id !== messageId) {
         return await interaction.reply({
             content: '❌ This game belongs to a different message.',
@@ -279,7 +277,6 @@ async function handleConnect4Move(interaction) {
         });
     }
 
-    // Verify it's the player's turn
     if (interaction.user.id !== currentTurn) {
         return await interaction.reply({
             content: '❌ It\'s not your turn!',
@@ -296,7 +293,6 @@ async function handleConnect4Move(interaction) {
         }
     }
 
-    // Column is full
     if (row === -1) {
         return await interaction.reply({
             content: '❌ That column is full!',
@@ -313,7 +309,6 @@ async function handleConnect4Move(interaction) {
     const isTie = !winner && board[0].every(cell => cell !== '');
 
     if (winner || isTie) {
-        // Game over
         let winnerId = null;
         if (winner === 'R') {
             winnerId = redPlayer;
@@ -321,21 +316,8 @@ async function handleConnect4Move(interaction) {
             winnerId = yellowPlayer;
         }
 
-        // Update balances - ADD winnings instead of deducting
         if (winnerId) {
-            const winnerProfile = await profileModel.findOne({
-                userId: winnerId,
-                serverID: interaction.guild.id
-            });
-
-            if (!winnerProfile) {
-                console.error(`Winner profile not found for user ${winnerId}`);
-                return await interaction.reply({
-                    content: '❌ An error occurred while processing the game result.',
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
+            const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
             winnerProfile.balance += betAmount * 2;
             await winnerProfile.save();
 
@@ -347,23 +329,9 @@ async function handleConnect4Move(interaction) {
                 console.error('Failed to trigger balance change event:', err);
             }
         } else {
-            // Tie - refund bets
-            const challengerProfile = await profileModel.findOne({
-                userId: challengerId,
-                serverID: interaction.guild.id
-            });
-            const opponentProfile = await profileModel.findOne({
-                userId: opponentId,
-                serverID: interaction.guild.id
-            });
-
-            if (!challengerProfile || !opponentProfile) {
-                console.error('Player profile not found during tie refund');
-                return await interaction.reply({
-                    content: '❌ An error occurred while processing the refund.',
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
+            // Tie - refund both
+            const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+            const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
             challengerProfile.balance += betAmount;
             opponentProfile.balance += betAmount;
@@ -382,27 +350,19 @@ async function handleConnect4Move(interaction) {
             }
         }
 
-        // Create result embed WITH BOARD DISPLAY
         const resultEmbed = new EmbedBuilder()
-            .setTitle('🔴 Connect 4 Results')
-            .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+            .setTitle('🔴 Connect 4 - Game Over')
+            .setDescription(
+                winnerId
+                    ? `🎉 **<@${winnerId}> wins ${(betAmount * 2).toLocaleString()} points!**`
+                    : '🤝 **It\'s a tie!** Bets refunded.'
+            )
+            .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
+            .setImage('attachment://connect4.png')
             .setTimestamp();
 
-        let description = '';
-        if (winnerId) {
-            const emoji = winnerId === redPlayer ? '🔴' : '🟡';
-            description = `# 🎉 ${emoji} <@${winnerId}> WINS!\n\n`;
-            description += `**Prize:** ${(betAmount * 2).toLocaleString()} points\n\n`;
-        } else {
-            description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.\n\n';
-        }
-
-        description += `**Final Board:**\n${createConnect4BoardDisplay(board)}`;
-
-        resultEmbed.setDescription(description);
-
         const finalBoardImage = createConnect4Image(board);
-        const finalBoardButtons = createConnect4Board(gameId, board, true);
+        const disabledButtons = createConnect4Board(gameId, board, true);
 
         await interaction.update({
             embeds: [resultEmbed],
@@ -410,7 +370,7 @@ async function handleConnect4Move(interaction) {
                 attachment: finalBoardImage,
                 name: 'connect4.png'
             }],
-            components: finalBoardButtons
+            components: disabledButtons
         });
 
         // Log to games channel
@@ -422,22 +382,19 @@ async function handleConnect4Move(interaction) {
                     { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
                     { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
                     { name: 'Result', value: winnerId ? `🎉 <@${winnerId}> wins!` : '🤝 Tie - Bets refunded', inline: false },
-                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
-                    { name: 'Total Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
+                    { name: 'Prize', value: winnerId ? `${(betAmount * 2).toLocaleString()} points` : 'Refunded', inline: true }
                 )
-                .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+                .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
                 .setTimestamp();
 
             await gamesLogsChannel.send({ embeds: [logEmbed] });
         }
 
         global.activeC4Games.delete(gameId);
+        await removeActiveGame(gameId);
     } else {
-        // Continue game - switch turns
         game.currentTurn = currentTurn === challengerId ? opponentId : challengerId;
-        const nextSymbol = game.currentTurn === redPlayer ? 'Red (🔴)' : 'Yellow (🟡)';
-
-        const updatedBoardImage = createConnect4Image(board);
+        const nextSymbol = game.currentTurn === redPlayer ? '🔴' : '🟡';
 
         const updatedEmbed = new EmbedBuilder()
             .setTitle('🔴 Connect 4')
@@ -445,13 +402,14 @@ async function handleConnect4Move(interaction) {
             .addFields(
                 { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
                 { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
-                { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
             )
-            .setColor(game.currentTurn === redPlayer ? 0xE74C3C : 0xF1C40F)
+            .setColor(0xE74C3C)
             .setImage('attachment://connect4.png')
             .setTimestamp();
 
-        const updatedBoardButtons = createConnect4Board(gameId, board);
+        const updatedBoardImage = createConnect4Image(board);
+        const updatedButtons = createConnect4Board(gameId, board);
 
         await interaction.update({
             embeds: [updatedEmbed],
@@ -459,7 +417,7 @@ async function handleConnect4Move(interaction) {
                 attachment: updatedBoardImage,
                 name: 'connect4.png'
             }],
-            components: updatedBoardButtons
+            components: updatedButtons
         });
     }
 }
@@ -484,7 +442,6 @@ async function handleConnect4Forfeit(interaction) {
 
     const { challengerId, opponentId, betAmount, redPlayer, yellowPlayer, board } = game;
 
-    // Verify it's a player in the game
     if (interaction.user.id !== challengerId && interaction.user.id !== opponentId) {
         return await interaction.reply({
             content: '❌ You are not in this game.',
@@ -492,25 +449,11 @@ async function handleConnect4Forfeit(interaction) {
         });
     }
 
-    // Determine winner (the other player)
     const loserId = interaction.user.id;
     const winnerId = loserId === challengerId ? opponentId : challengerId;
 
     // Award winnings to winner
-    const winnerProfile = await profileModel.findOne({
-        userId: winnerId,
-        serverID: interaction.guild.id
-    });
-
-    // Add null check
-    if (!winnerProfile) {
-        console.error(`Winner profile not found for user ${winnerId}`);
-        return await interaction.reply({
-            content: '❌ An error occurred while processing the forfeit.',
-            flags: [MessageFlags.Ephemeral]
-        });
-    }
-
+    const winnerProfile = await dbUtils.ensureProfile(winnerId, interaction.guild.id);
     winnerProfile.balance += betAmount * 2;
     await winnerProfile.save();
 
@@ -523,16 +466,15 @@ async function handleConnect4Forfeit(interaction) {
         console.error('Failed to trigger balance change event:', err);
     }
 
-    // Create forfeit result embed
     const resultEmbed = new EmbedBuilder()
         .setTitle('🏳️ Connect 4 - Forfeit')
         .setDescription(
             `<@${loserId}> has forfeited the game!\n\n` +
             `🎉 <@${winnerId}> wins by forfeit!\n\n` +
-            `**Prize:** ${(betAmount * 2).toLocaleString()} points\n\n` +
-            `**Final Board:**\n${createConnect4BoardDisplay(board)}`
+            `**Prize:** ${(betAmount * 2).toLocaleString()} points`
         )
         .setColor(0x95A5A6)
+        .setImage('attachment://connect4.png')
         .setTimestamp();
 
     const finalBoardImage = createConnect4Image(board);
@@ -552,9 +494,8 @@ async function handleConnect4Forfeit(interaction) {
         const logEmbed = new EmbedBuilder()
             .setTitle('🏳️ Connect 4 - Forfeit')
             .addFields(
-                { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
-                { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
-                { name: 'Result', value: `<@${loserId}> forfeited - <@${winnerId}> wins!`, inline: false },
+                { name: 'Forfeited By', value: `<@${loserId}>`, inline: true },
+                { name: 'Winner', value: `<@${winnerId}>`, inline: true },
                 { name: 'Prize', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
             )
             .setColor(0x95A5A6)
@@ -564,6 +505,7 @@ async function handleConnect4Forfeit(interaction) {
     }
 
     global.activeC4Games.delete(gameId);
+    await removeActiveGame(gameId);
 }
 
 module.exports = {

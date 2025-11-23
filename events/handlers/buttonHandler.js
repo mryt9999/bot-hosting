@@ -1,7 +1,8 @@
-const { handleRPSChallenge, handleRPSChoice } = require('./games/rpsHandler');
-const { handleTicTacToeChallenge, handleTicTacToeMove, handleTicTacToeForfeit } = require('./games/tictactoeHandler');
+const { handleRPSChallenge, handleRPSChoice, handleRPSForfeit } = require('./games/rpsHandler');
+const { handleTTTChallenge, handleTTTMove, handleTTTForfeit } = require('./games/tictactoeHandler');
 const { handleConnect4Challenge, handleConnect4Move, handleConnect4Forfeit } = require('./games/connect4Handler');
 const { handleLotteryButtons } = require('./lotteryHandler');
+const { handleAnimalSelection } = require('./lotteryHandler');
 const {
     handleHelpButtons,
     handleTransferButtons,
@@ -23,17 +24,21 @@ async function handleButtonInteraction(interaction, profileData, replyEphemeral)
         return await handleRPSChoice(interaction);
     }
 
+    if (interaction.customId.startsWith('rps_forfeit_')) {
+        return await handleRPSForfeit(interaction);
+    }
+
     // Tic Tac Toe game buttons
     if (interaction.customId.startsWith('ttt_accept_') || interaction.customId.startsWith('ttt_decline_')) {
-        return await handleTicTacToeChallenge(interaction);
+        return await handleTTTChallenge(interaction);
     }
 
     if (interaction.customId.startsWith('ttt_move_')) {
-        return await handleTicTacToeMove(interaction);
+        return await handleTTTMove(interaction);
     }
 
     if (interaction.customId.startsWith('ttt_forfeit_')) {
-        return await handleTicTacToeForfeit(interaction);
+        return await handleTTTForfeit(interaction);
     }
 
     // Connect 4 game buttons
@@ -41,7 +46,7 @@ async function handleButtonInteraction(interaction, profileData, replyEphemeral)
         return await handleConnect4Challenge(interaction);
     }
 
-    if (interaction.customId.startsWith('c4_drop_')) {
+    if (interaction.customId.startsWith('c4_move_')) {
         return await handleConnect4Move(interaction);
     }
 
@@ -52,6 +57,11 @@ async function handleButtonInteraction(interaction, profileData, replyEphemeral)
     // Lottery buttons
     if (interaction.customId.startsWith('lottery_')) {
         return await handleLotteryButtons(interaction);
+    }
+
+    // Animal selection buttons (for animal lottery)
+    if (interaction.customId.startsWith('animal_select_')) {
+        return await handleAnimalSelection(interaction);
     }
 
     // Help buttons

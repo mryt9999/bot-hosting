@@ -1,107 +1,79 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const profileModel = require('../models/profileSchema');
+const { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { startChallengeTimeout } = require('../events/handlers/games/challengeTimeoutHandler');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('tictactoe')
-        .setDescription('Challenge someone to a game of Tic Tac Toe')
+        .setDescription('Challenge someone to Tic Tac Toe')
         .addUserOption(option =>
-            option
-                .setName('opponent')
+            option.setName('opponent')
                 .setDescription('The user you want to challenge')
-                .setRequired(true)
-        )
+                .setRequired(true))
         .addIntegerOption(option =>
-            option
-                .setName('bet')
+            option.setName('bet')
                 .setDescription('Amount of points to bet')
                 .setRequired(true)
-                .setMinValue(1)
-        ),
+                .setMinValue(1)),
     async execute(interaction, profileData) {
         try {
-            const challenger = interaction.user;
             const opponent = interaction.options.getUser('opponent');
             const betAmount = interaction.options.getInteger('bet');
 
-            // Validation checks
+            // Validation
             if (opponent.bot) {
                 return await interaction.reply({
-                    content: '❌ You cannot challenge a bot to Tic Tac Toe.',
+                    content: '❌ You cannot challenge a bot!',
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            if (opponent.id === challenger.id) {
+            if (opponent.id === interaction.user.id) {
                 return await interaction.reply({
-                    content: '❌ You cannot challenge yourself to Tic Tac Toe.',
+                    content: '❌ You cannot challenge yourself!',
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            // Check challenger balance
-            const challengerProfile = await profileModel.findOne({
-                userId: challenger.id,
-                serverID: interaction.guild.id
-            });
-
-            if (!challengerProfile || challengerProfile.balance < betAmount) {
+            if (profileData.balance < betAmount) {
                 return await interaction.reply({
-                    content: `❌ You don't have enough points. You have ${challengerProfile?.balance || 0} points.`,
+                    content: `❌ You don't have enough points! Your balance: ${profileData.balance.toLocaleString()}`,
                     flags: [MessageFlags.Ephemeral]
                 });
             }
 
-            // Check opponent balance
-            const opponentProfile = await profileModel.findOne({
-                userId: opponent.id,
-                serverID: interaction.guild.id
-            });
-
-            if (!opponentProfile) {
-                return await interaction.reply({
-                    content: `❌ ${opponent.username} doesn't have a profile yet.`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
-            if (opponentProfile.balance < betAmount) {
-                return await interaction.reply({
-                    content: `❌ ${opponent.username} doesn't have enough points. They have ${opponentProfile.balance} points.`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
-            // Create challenge embed
             const challengeEmbed = new EmbedBuilder()
-                .setTitle('⭕ Tic Tac Toe Challenge')
-                .setDescription(`${challenger} has challenged ${opponent} to a game of Tic Tac Toe!`)
+                .setTitle('❌ Tic Tac Toe Challenge')
+                .setDescription(`<@${interaction.user.id}> challenges <@${opponent.id}> to Tic Tac Toe!`)
                 .addFields(
-                    { name: '💰 Bet Amount', value: `${betAmount.toLocaleString()} points each`, inline: true },
-                    { name: '⭕ X Player', value: challenger.username, inline: true },
-                    { name: '❌ O Player', value: opponent.username, inline: true }
+                    { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points`, inline: true },
+                    { name: 'Time Limit', value: '60 seconds to accept', inline: true }
                 )
                 .setColor(0x3498DB)
                 .setTimestamp();
 
-            const acceptButton = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`ttt_accept_${challenger.id}_${opponent.id}_${betAmount}`)
-                    .setLabel('Accept Challenge')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('✅'),
-                new ButtonBuilder()
-                    .setCustomId(`ttt_decline_${challenger.id}_${opponent.id}`)
-                    .setLabel('Decline Challenge')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('❌')
-            );
+            const buttons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`ttt_accept_${interaction.user.id}_${opponent.id}_${betAmount}`)
+                        .setLabel('Accept')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('✅'),
+                    new ButtonBuilder()
+                        .setCustomId(`ttt_decline_${interaction.user.id}_${opponent.id}`)
+                        .setLabel('Decline')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('❌')
+                );
 
-            await interaction.reply({
-                content: `${opponent}`,
+            const challengeMessage = await interaction.reply({
+                content: `<@${opponent.id}>`,
                 embeds: [challengeEmbed],
-                components: [acceptButton]
+                components: [buttons],
+                fetchReply: true
             });
+
+            // Start the 1-minute timeout
+            startChallengeTimeout(challengeMessage, 'ttt', interaction.user.id, opponent.id);
 
         } catch (error) {
             console.error('Error in tictactoe command:', error);
