@@ -1,11 +1,13 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { createMainHelpEmbed, createCommandSelectMenu } = require('../../commands/help');
+const { handleTransferCancel } = require('../../commands/transfer');
+const { processLoanAcceptance } = require('../../commands/loan');
 
 /**
  * Handles help navigation buttons
  */
 async function handleHelpButtons(interaction) {
     if (interaction.customId === 'help_back_to_list') {
-        const { createMainHelpEmbed, createCommandSelectMenu } = require('../../commands/help');
         const mainEmbed = createMainHelpEmbed(interaction);
         const selectMenu = createCommandSelectMenu(interaction);
 
@@ -24,7 +26,6 @@ async function handleHelpButtons(interaction) {
 async function handleTransferButtons(interaction) {
     if (interaction.customId.startsWith('transfer_cancel_')) {
         const userId = interaction.customId.replace('transfer_cancel_', '');
-        const { handleTransferCancel } = require('../../commands/transfer');
         await handleTransferCancel(interaction, userId);
         return true;
     }
@@ -55,7 +56,6 @@ async function handleLoanButtons(interaction) {
     // Loan accept button
     if (interaction.customId.startsWith('loan_accept_')) {
         const loanId = interaction.customId.replace('loan_accept_', '');
-        const { processLoanAcceptance } = require('../../commands/loan');
         await processLoanAcceptance(interaction, loanId);
         return true;
     }
@@ -63,7 +63,6 @@ async function handleLoanButtons(interaction) {
     // Loan confirm button (high interest confirmation)
     if (interaction.customId.startsWith('loan_confirm_')) {
         const loanId = interaction.customId.replace('loan_confirm_', '');
-        const { processLoanAcceptance } = require('../../commands/loan');
         await processLoanAcceptance(interaction, loanId);
         return true;
     }

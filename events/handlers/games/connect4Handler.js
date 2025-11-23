@@ -221,7 +221,7 @@ async function handleConnect4Challenge(interaction) {
     });
 
     // Create board buttons with forfeit option
-    const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board, false, challengerId);
+    const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board, false);
 
     // Create board image
     const boardImage = createConnect4Image(global.activeC4Games.get(gameId).board);

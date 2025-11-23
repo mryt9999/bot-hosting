@@ -1,4 +1,5 @@
 const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
+const { createCommandDetailEmbed, createCommandSelectMenu, createBackButton } = require('../../commands/help');
 
 /**
  * Handles user select menu interactions (donate recipient selection)
@@ -46,7 +47,6 @@ async function handleStringSelectMenu(interaction) {
             });
         }
 
-        const { createCommandDetailEmbed, createCommandSelectMenu, createBackButton } = require('../../commands/help');
         const detailEmbed = createCommandDetailEmbed(command, interaction);
         const selectMenu = createCommandSelectMenu(interaction);
         const backButton = createBackButton();
