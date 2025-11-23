@@ -1,3 +1,4 @@
 node_modules
 .env
 garbageDump.js
+events/interactionCreate.old.js
