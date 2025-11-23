@@ -143,6 +143,64 @@ module.exports = {
                     option
                         .setName('transferid')
                         .setDescription('The transfer ID to mark as paid')
+                        .setRequired(true)))
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('endgame')
+                .setDescription('Force end an active game')
+                .addStringOption(option =>
+                    option.setName('type')
+                        .setDescription('Game type')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: 'Tic Tac Toe', value: 'tictactoe' },
+                            { name: 'Connect 4', value: 'connect4' },
+                            { name: 'Rock Paper Scissors', value: 'rps' }
+                        ))
+                .addUserOption(option =>
+                    option.setName('player')
+                        .setDescription('One of the players in the game')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('outcome')
+                        .setDescription('How to resolve the game')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: 'Refund Both Players', value: 'refund' },
+                            { name: 'Award to Player 1', value: 'player1' },
+                            { name: 'Award to Player 2', value: 'player2' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('activegames')
+                .setDescription('View all active games')
+                .addStringOption(option =>
+                    option.setName('type')
+                        .setDescription('Filter by game type (optional)')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'All Games', value: 'all' },
+                            { name: 'Tic Tac Toe', value: 'tictactoe' },
+                            { name: 'Connect 4', value: 'connect4' },
+                            { name: 'Rock Paper Scissors', value: 'rps' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('gameinfo')
+                .setDescription('Get detailed info about a specific game')
+                .addStringOption(option =>
+                    option.setName('type')
+                        .setDescription('Game type')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: 'Tic Tac Toe', value: 'tictactoe' },
+                            { name: 'Connect 4', value: 'connect4' },
+                            { name: 'Rock Paper Scissors', value: 'rps' }
+                        ))
+                .addUserOption(option =>
+                    option.setName('player')
+                        .setDescription('One of the players in the game')
                         .setRequired(true))),
 
     async execute(interaction) {
@@ -707,5 +765,320 @@ module.exports = {
                 await interaction.editReply('❌ An error occurred while processing the transfer payment. Please try again.');
             }
         }
+        if (adminSubcommand === 'endgame') {
+            return await this.endGame(interaction, notifyOwner);
+        }
+
+        if (adminSubcommand === 'activegames') {
+            return await this.activeGames(interaction);
+        }
+
+        if (adminSubcommand === 'gameinfo') {
+            return await this.gameInfo(interaction);
+        }
+
+    }, //END OF EXECUTE
+
+
+
+
+
+
+
+    async endGame(interaction, notifyOwner) {
+        const gameType = interaction.options.getString('type');
+        const player = interaction.options.getUser('player');
+        const outcome = interaction.options.getString('outcome');
+
+        let gamesMap;
+        let gameName;
+
+        if (gameType === 'tictactoe') {
+            gamesMap = global.activeTTTGames;
+            gameName = 'Tic Tac Toe';
+        } else if (gameType === 'connect4') {
+            gamesMap = global.activeC4Games;
+            gameName = 'Connect 4';
+        } else if (gameType === 'rps') {
+            const { activeRPSGames } = require('../events/interactionCreate');
+            gamesMap = activeRPSGames;
+            gameName = 'Rock Paper Scissors';
+        }
+
+        if (!gamesMap || gamesMap.size === 0) {
+            return await interaction.editReply(`❌ No active ${gameName} games found.`);
+        }
+
+        let foundGameId = null;
+        let foundGame = null;
+
+        for (const [gameId, game] of gamesMap.entries()) {
+            if (game.challengerId === player.id || game.opponentId === player.id) {
+                foundGameId = gameId;
+                foundGame = game;
+                break;
+            }
+        }
+
+        if (!foundGame) {
+            return await interaction.editReply(`❌ No active ${gameName} game found for ${player.tag}.`);
+        }
+
+        const { challengerId, opponentId, betAmount } = foundGame;
+
+        if (outcome === 'refund') {
+            const challengerProfile = await profileModel.findOne({
+                userId: challengerId,
+                serverID: interaction.guild.id
+            });
+            const opponentProfile = await profileModel.findOne({
+                userId: opponentId,
+                serverID: interaction.guild.id
+            });
+
+            if (challengerProfile) {
+                challengerProfile.balance += betAmount;
+                await challengerProfile.save();
+            }
+
+            if (opponentProfile) {
+                opponentProfile.balance += betAmount;
+                await opponentProfile.save();
+            }
+
+            try {
+                const balanceChangeEvent = require('../events/balanceChange');
+                const challengerMember = await interaction.guild.members.fetch(challengerId);
+                const opponentMember = await interaction.guild.members.fetch(opponentId);
+                balanceChangeEvent.execute(challengerMember);
+                balanceChangeEvent.execute(opponentMember);
+            } catch (err) {
+                console.error('Failed to trigger balance change event:', err);
+            }
+
+            await interaction.editReply(`✅ ${gameName} game ended by admin. ${betAmount.toLocaleString()} points refunded to both <@${challengerId}> and <@${opponentId}>.`);
+
+        } else {
+            const winnerId = outcome === 'player1' ? challengerId : opponentId;
+            const winnerProfile = await profileModel.findOne({
+                userId: winnerId,
+                serverID: interaction.guild.id
+            });
+
+            if (winnerProfile) {
+                winnerProfile.balance += betAmount * 2;
+                await winnerProfile.save();
+
+                try {
+                    const balanceChangeEvent = require('../events/balanceChange');
+                    const winnerMember = await interaction.guild.members.fetch(winnerId);
+                    balanceChangeEvent.execute(winnerMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+            }
+
+            await interaction.editReply(`✅ ${gameName} game ended by admin. <@${winnerId}> awarded ${(betAmount * 2).toLocaleString()} points.`);
+        }
+
+        gamesMap.delete(foundGameId);
+
+        const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+        if (gamesLogsChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle(`🛑 ${gameName} - Admin Intervention`)
+                .addFields(
+                    { name: 'Admin', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Player 1', value: `<@${challengerId}>`, inline: true },
+                    { name: 'Player 2', value: `<@${opponentId}>`, inline: true },
+                    { name: 'Outcome', value: outcome === 'refund' ? 'Refunded both' : `Awarded to <@${outcome === 'player1' ? challengerId : opponentId}>`, inline: false },
+                    { name: 'Amount', value: outcome === 'refund' ? `${betAmount.toLocaleString()} each` : `${(betAmount * 2).toLocaleString()} total`, inline: true }
+                )
+                .setColor(0xE74C3C)
+                .setTimestamp();
+
+            await gamesLogsChannel.send({ embeds: [logEmbed] });
+        }
+
+        await notifyOwner(
+            'endgame',
+            `Ended ${gameName} game for ${player.tag}. Outcome: ${outcome}. Amount: ${outcome === 'refund' ? betAmount : betAmount * 2} points`
+        );
+    },
+
+    async activeGames(interaction) {
+        const filterType = interaction.options.getString('type') || 'all';
+
+        const embed = new EmbedBuilder()
+            .setTitle('🎮 Active Games')
+            .setColor(0x3498DB)
+            .setTimestamp();
+
+        let totalGames = 0;
+        let description = '';
+
+        if (filterType === 'all' || filterType === 'tictactoe') {
+            const tttGames = global.activeTTTGames || new Map();
+            if (tttGames.size > 0) {
+                description += `\n**⭕ Tic Tac Toe (${tttGames.size})**\n`;
+                for (const [gameId, game] of tttGames.entries()) {
+                    const challenger = await interaction.client.users.fetch(game.challengerId).catch(() => null);
+                    const opponent = await interaction.client.users.fetch(game.opponentId).catch(() => null);
+
+                    description += `• ${challenger?.username || 'Unknown'} vs ${opponent?.username || 'Unknown'}\n`;
+                    description += `  Bet: ${game.betAmount.toLocaleString()} points | Turn: <@${game.currentTurn}>\n`;
+                }
+                totalGames += tttGames.size;
+            }
+        }
+
+        if (filterType === 'all' || filterType === 'connect4') {
+            const c4Games = global.activeC4Games || new Map();
+            if (c4Games.size > 0) {
+                description += `\n**🔴 Connect 4 (${c4Games.size})**\n`;
+                for (const [gameId, game] of c4Games.entries()) {
+                    const challenger = await interaction.client.users.fetch(game.challengerId).catch(() => null);
+                    const opponent = await interaction.client.users.fetch(game.opponentId).catch(() => null);
+
+                    description += `• ${challenger?.username || 'Unknown'} vs ${opponent?.username || 'Unknown'}\n`;
+                    description += `  Bet: ${game.betAmount.toLocaleString()} points | Turn: <@${game.currentTurn}>\n`;
+                }
+                totalGames += c4Games.size;
+            }
+        }
+
+        if (filterType === 'all' || filterType === 'rps') {
+            const { activeRPSGames } = require('../events/interactionCreate');
+            const rpsGames = activeRPSGames || new Map();
+
+            if (rpsGames.size > 0) {
+                description += `\n**🪨📄✂️ Rock Paper Scissors (${rpsGames.size})**\n`;
+                for (const [gameId, game] of rpsGames.entries()) {
+                    const challenger = await interaction.client.users.fetch(game.challengerId).catch(() => null);
+                    const opponent = await interaction.client.users.fetch(game.opponentId).catch(() => null);
+
+                    const challengerReady = game.choices[game.challengerId] ? '✅' : '⏳';
+                    const opponentReady = game.choices[game.opponentId] ? '✅' : '⏳';
+
+                    description += `• ${challenger?.username || 'Unknown'} ${challengerReady} vs ${opponent?.username || 'Unknown'} ${opponentReady}\n`;
+                    description += `  Bet: ${game.betAmount.toLocaleString()} points\n`;
+                }
+                totalGames += rpsGames.size;
+            }
+        }
+
+        if (totalGames === 0) {
+            description = '📭 No active games found.';
+        } else {
+            description = `**Total Active Games: ${totalGames}**\n${description}`;
+        }
+
+        embed.setDescription(description);
+
+        await interaction.editReply({ embeds: [embed] });
+    },
+
+    async gameInfo(interaction) {
+        const gameType = interaction.options.getString('type');
+        const player = interaction.options.getUser('player');
+
+        let gamesMap;
+        let gameName;
+
+        if (gameType === 'tictactoe') {
+            gamesMap = global.activeTTTGames;
+            gameName = 'Tic Tac Toe';
+        } else if (gameType === 'connect4') {
+            gamesMap = global.activeC4Games;
+            gameName = 'Connect 4';
+        } else if (gameType === 'rps') {
+            const { activeRPSGames } = require('../events/interactionCreate');
+            gamesMap = activeRPSGames;
+            gameName = 'Rock Paper Scissors';
+        }
+
+        if (!gamesMap || gamesMap.size === 0) {
+            return await interaction.editReply(`❌ No active ${gameName} games found.`);
+        }
+
+        let foundGame = null;
+        let foundGameId = null;
+
+        for (const [gameId, game] of gamesMap.entries()) {
+            if (game.challengerId === player.id || game.opponentId === player.id) {
+                foundGame = game;
+                foundGameId = gameId;
+                break;
+            }
+        }
+
+        if (!foundGame) {
+            return await interaction.editReply(`❌ No active ${gameName} game found for ${player.tag}.`);
+        }
+
+        const challenger = await interaction.client.users.fetch(foundGame.challengerId);
+        const opponent = await interaction.client.users.fetch(foundGame.opponentId);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`🎮 ${gameName} Game Info`)
+            .setColor(0x3498DB)
+            .addFields(
+                { name: 'Game ID', value: foundGameId, inline: false },
+                { name: 'Player 1 (Challenger)', value: `${challenger.tag} (<@${foundGame.challengerId}>)`, inline: true },
+                { name: 'Player 2 (Opponent)', value: `${opponent.tag} (<@${foundGame.opponentId}>)`, inline: true },
+                { name: 'Bet Amount', value: `${foundGame.betAmount.toLocaleString()} points each`, inline: true },
+                { name: 'Prize Pool', value: `${(foundGame.betAmount * 2).toLocaleString()} points`, inline: true },
+                { name: 'Current Turn', value: `<@${foundGame.currentTurn}>`, inline: true },
+                { name: 'Message ID', value: foundGame.messageId || 'N/A', inline: true }
+            )
+            .setTimestamp();
+
+        if (gameType === 'tictactoe') {
+            const xPlayer = foundGame.xPlayer === foundGame.challengerId ? challenger.tag : opponent.tag;
+            const oPlayer = foundGame.oPlayer === foundGame.challengerId ? challenger.tag : opponent.tag;
+
+            embed.addFields(
+                { name: 'X Player', value: xPlayer, inline: true },
+                { name: 'O Player', value: oPlayer, inline: true }
+            );
+
+            const emojis = { '': '⬜', 'X': '❌', 'O': '⭕' };
+            let boardDisplay = '';
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const index = row * 3 + col;
+                    boardDisplay += emojis[foundGame.board[index] || ''];
+                }
+                boardDisplay += '\n';
+            }
+            embed.addFields({ name: 'Board State', value: boardDisplay, inline: false });
+
+        } else if (gameType === 'connect4') {
+            const redPlayer = foundGame.redPlayer === foundGame.challengerId ? challenger.tag : opponent.tag;
+            const yellowPlayer = foundGame.yellowPlayer === foundGame.challengerId ? challenger.tag : opponent.tag;
+
+            embed.addFields(
+                { name: '🔴 Red Player', value: redPlayer, inline: true },
+                { name: '🟡 Yellow Player', value: yellowPlayer, inline: true }
+            );
+
+            let filledCells = 0;
+            for (const row of foundGame.board) {
+                filledCells += row.filter(cell => cell !== '').length;
+            }
+            embed.addFields({ name: 'Filled Cells', value: `${filledCells}/42`, inline: true });
+
+        } else if (gameType === 'rps') {
+            const challengerReady = foundGame.choices[foundGame.challengerId] ? '✅ Ready' : '⏳ Waiting';
+            const opponentReady = foundGame.choices[foundGame.opponentId] ? '✅ Ready' : '⏳ Waiting';
+
+            embed.addFields(
+                { name: 'Player 1 Status', value: challengerReady, inline: true },
+                { name: 'Player 2 Status', value: opponentReady, inline: true }
+            );
+        }
+
+        await interaction.editReply({ embeds: [embed] });
     }
+
 };

@@ -21,9 +21,36 @@ const { createConnect4Image } = require('../utils/connect4Canvas');
 const activeRPSGames = new Map();
 const pendingRPSChallenges = new Map(); // Track pending challenges
 
+
+// Add this helper function near the top with other helper functions (around line 40):
+
+function setupChallengeExpiration(interaction, challengeKey, pendingMap, gameType) {
+    setTimeout(async () => {
+        if (pendingMap.has(challengeKey)) {
+            pendingMap.delete(challengeKey);
+
+            const expireEmbed = new EmbedBuilder()
+                .setTitle(`⏱️ ${gameType} Challenge Expired`)
+                .setDescription('The challenge was not accepted within 1 minute.')
+                .setColor(0x95A5A6)
+                .setTimestamp();
+
+            try {
+                await interaction.editReply({
+                    embeds: [expireEmbed],
+                    components: []
+                });
+            } catch (error) {
+                console.error('Failed to update expired challenge:', error);
+            }
+        }
+    }, 60000); // 1 minute
+}
+
 module.exports = {
     name: Events.InteractionCreate,
     pendingRPSChallenges, // Export so rps.js can access it
+    activeRPSGames, // Export so rps.js can access it
     async execute(interaction) {
         ///////////////////////////////
         if (interaction.isAutocomplete()) {
@@ -269,7 +296,7 @@ module.exports = {
             // RPS Challenge Accept/Decline
             if (interaction.customId.startsWith('rps_accept_') || interaction.customId.startsWith('rps_decline_')) {
                 const parts = interaction.customId.split('_');
-                const action = parts[1];
+                const action = parts[1]; // This gets 'accept' or 'decline'
                 const challengerId = parts[2];
                 const opponentId = parts[3];
                 const betAmount = action === 'accept' ? parseInt(parts[4]) : 0;
@@ -282,7 +309,7 @@ module.exports = {
                     });
                 }
 
-                // Check if this challenge was already responded to
+                // Check if this challenge was already responded to or expired
                 if (!pendingRPSChallenges.has(challengeKey)) {
                     return await interaction.reply({
                         content: '❌ This challenge is no longer valid or has already been responded to.',
@@ -290,7 +317,7 @@ module.exports = {
                     });
                 }
 
-                // Remove from pending challenges
+                // Remove from pending challenges BEFORE any other action
                 pendingRPSChallenges.delete(challengeKey);
 
                 if (action === 'decline') {
@@ -307,6 +334,7 @@ module.exports = {
                     return;
                 }
 
+                // ACCEPT LOGIC - action === 'accept'
                 // Check if either player is already in an active game
                 const existingGame = Array.from(activeRPSGames.values()).find(
                     game => game.challengerId === challengerId ||
@@ -343,6 +371,24 @@ module.exports = {
                         components: []
                     });
                     return;
+                }
+
+                // DEDUCT BETS IMMEDIATELY
+                challengerProfile.balance -= betAmount;
+                opponentProfile.balance -= betAmount;
+
+                await challengerProfile.save();
+                await opponentProfile.save();
+
+                // Trigger balance change events
+                try {
+                    const balanceChangeEvent = require('./balanceChange');
+                    const challengerMember = await interaction.guild.members.fetch(challengerId);
+                    const opponentMember = await interaction.guild.members.fetch(opponentId);
+                    balanceChangeEvent.execute(challengerMember);
+                    balanceChangeEvent.execute(opponentMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
                 }
 
                 const gameId = `${challengerId}_${opponentId}_${Date.now()}`;
@@ -474,7 +520,35 @@ module.exports = {
                     let resultText = '';
 
                     if (challengerChoice === opponentChoice) {
+                        // TIE - REFUND BOTH
                         resultText = '# 🤝 It\'s a tie! Bets refunded.';
+
+                        const challengerProfile = await profileModel.findOne({
+                            userId: challengerId,
+                            serverID: interaction.guild.id
+                        });
+                        const opponentProfile = await profileModel.findOne({
+                            userId: opponentId,
+                            serverID: interaction.guild.id
+                        });
+
+                        if (challengerProfile && opponentProfile) {
+                            challengerProfile.balance += betAmount;
+                            opponentProfile.balance += betAmount;
+
+                            await challengerProfile.save();
+                            await opponentProfile.save();
+
+                            try {
+                                const balanceChangeEvent = require('./balanceChange');
+                                const challengerMember = await interaction.guild.members.fetch(challengerId);
+                                const opponentMember = await interaction.guild.members.fetch(opponentId);
+                                balanceChangeEvent.execute(challengerMember);
+                                balanceChangeEvent.execute(opponentMember);
+                            } catch (err) {
+                                console.error('Failed to trigger balance change event:', err);
+                            }
+                        }
                     } else if (
                         (challengerChoice === 'rock' && opponentChoice === 'scissors') ||
                         (challengerChoice === 'paper' && opponentChoice === 'rock') ||
@@ -492,26 +566,19 @@ module.exports = {
                             userId: winnerId,
                             serverID: interaction.guild.id
                         });
-                        const loserId = winnerId === challengerId ? opponentId : challengerId;
-                        const loserProfile = await profileModel.findOne({
-                            userId: loserId,
-                            serverID: interaction.guild.id
-                        });
 
-                        winnerProfile.balance += betAmount;
-                        loserProfile.balance -= betAmount;
+                        if (winnerProfile) {
+                            // Winner gets 2x bet (their money back + opponent's bet)
+                            winnerProfile.balance += betAmount * 2;
+                            await winnerProfile.save();
 
-                        await winnerProfile.save();
-                        await loserProfile.save();
-
-                        try {
-                            const balanceChangeEvent = require('./balanceChange');
-                            const winnerMember = await interaction.guild.members.fetch(winnerId);
-                            const loserMember = await interaction.guild.members.fetch(loserId);
-                            balanceChangeEvent.execute(winnerMember);
-                            balanceChangeEvent.execute(loserMember);
-                        } catch (err) {
-                            console.error('Failed to trigger balance change event:', err);
+                            try {
+                                const balanceChangeEvent = require('./balanceChange');
+                                const winnerMember = await interaction.guild.members.fetch(winnerId);
+                                balanceChangeEvent.execute(winnerMember);
+                            } catch (err) {
+                                console.error('Failed to trigger balance change event:', err);
+                            }
                         }
                     }
 
@@ -607,15 +674,32 @@ module.exports = {
                     return;
                 }
 
-                // Verify balances
-                const challengerProfile = await profileModel.findOne({
+                // Verify balances and ensure profiles exist
+                let challengerProfile = await profileModel.findOne({
                     userId: challengerId,
                     serverID: interaction.guild.id
                 });
-                const opponentProfile = await profileModel.findOne({
+                let opponentProfile = await profileModel.findOne({
                     userId: opponentId,
                     serverID: interaction.guild.id
                 });
+
+                // Create profiles if they don't exist
+                if (!challengerProfile) {
+                    challengerProfile = await profileModel.create({
+                        userId: challengerId,
+                        serverID: interaction.guild.id,
+                        balance: 100
+                    });
+                }
+
+                if (!opponentProfile) {
+                    opponentProfile = await profileModel.create({
+                        userId: opponentId,
+                        serverID: interaction.guild.id,
+                        balance: 100
+                    });
+                }
 
                 if (challengerProfile.balance < betAmount) {
                     await interaction.update({
@@ -635,31 +719,53 @@ module.exports = {
                     return;
                 }
 
+                // OPTION 1: Deduct bets immediately
+                challengerProfile.balance -= betAmount;
+                opponentProfile.balance -= betAmount;
+
+                await challengerProfile.save();
+                await opponentProfile.save();
+
+                // Trigger balance change events
+                try {
+                    const balanceChangeEvent = require('./balanceChange');
+                    const challengerMember = await interaction.guild.members.fetch(challengerId);
+                    const opponentMember = await interaction.guild.members.fetch(opponentId);
+                    balanceChangeEvent.execute(challengerMember);
+                    balanceChangeEvent.execute(opponentMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+
                 // Initialize game
                 const gameId = `${challengerId}_${opponentId}_${Date.now()}`;
-                const activeTTTGames = new Map();
 
-                activeTTTGames.set(gameId, {
+                if (!global.activeTTTGames) {
+                    global.activeTTTGames = new Map();
+                }
+
+                global.activeTTTGames.set(gameId, {
                     challengerId,
                     opponentId,
                     betAmount,
-                    board: ['', '', '', '', '', '', '', '', ''], // 3x3 grid
-                    currentTurn: challengerId, // X goes first
+                    board: ['', '', '', '', '', '', '', '', ''],
+                    currentTurn: challengerId,
                     xPlayer: challengerId,
                     oPlayer: opponentId,
-                    messageId: interaction.message.id
+                    messageId: interaction.message.id,
+                    betsDeducted: true
                 });
 
-                // Create game board
-                const boardButtons = createTicTacToeBoard(gameId, ['', '', '', '', '', '', '', '', '']);
+                // Create game board with forfeit option
+                const boardButtons = createTicTacToeBoard(gameId, global.activeTTTGames.get(gameId).board, false);
 
                 const gameEmbed = new EmbedBuilder()
                     .setTitle('⭕ Tic Tac Toe')
-                    .setDescription(`**Current Turn:** <@${challengerId}> (⭕)`)
+                    .setDescription(`**Current Turn:** <@${challengerId}> (X)\n\n*Bets of ${betAmount.toLocaleString()} points have been deducted from both players.*`)
                     .addFields(
-                        { name: '⭕ X Player', value: `<@${challengerId}>`, inline: true },
-                        { name: '❌ O Player', value: `<@${opponentId}>`, inline: true },
-                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                        { name: 'X Player', value: `<@${challengerId}>`, inline: true },
+                        { name: 'O Player', value: `<@${opponentId}>`, inline: true },
+                        { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
                     )
                     .setColor(0x3498DB)
                     .setTimestamp();
@@ -669,24 +775,6 @@ module.exports = {
                     embeds: [gameEmbed],
                     components: boardButtons
                 });
-
-                // Store game in a module-level Map (you'll need to add this at the top of the file)
-                if (!global.activeTTTGames) {
-                    global.activeTTTGames = new Map();
-                }
-                global.activeTTTGames.set(gameId, activeTTTGames.get(gameId));
-
-                // Game timeout
-                setTimeout(() => {
-                    if (global.activeTTTGames && global.activeTTTGames.has(gameId)) {
-                        global.activeTTTGames.delete(gameId);
-                        interaction.message.edit({
-                            content: '⏱️ Game expired - no moves were made in time.',
-                            embeds: [],
-                            components: []
-                        }).catch(() => { });
-                    }
-                }, 5 * 60 * 1000); // 5 minutes
             }
 
             // Tic Tac Toe Move Handler
@@ -742,61 +830,79 @@ module.exports = {
                 const isTie = !winner && board.every(cell => cell !== '');
 
                 if (winner || isTie) {
-                    // Game over
-                    let winnerId = null;
-                    if (winner === 'X') {
-                        winnerId = xPlayer;
-                    } else if (winner === 'O') {
-                        winnerId = oPlayer;
-                    }
+                    // Game over - ADD winnings instead of deducting
+                    if (winner) {
+                        // winner is 'X' or 'O', need to get the actual user ID
+                        const winnerId = winner === 'X' ? xPlayer : oPlayer;
 
-                    // Update balances
-                    if (winnerId) {
                         const winnerProfile = await profileModel.findOne({
                             userId: winnerId,
                             serverID: interaction.guild.id
                         });
-                        const loserId = winnerId === challengerId ? opponentId : challengerId;
-                        const loserProfile = await profileModel.findOne({
-                            userId: loserId,
-                            serverID: interaction.guild.id
-                        });
 
-                        winnerProfile.balance += betAmount;
-                        loserProfile.balance -= betAmount;
+                        if (!winnerProfile) {
+                            console.error(`Winner profile not found for user ${winnerId}`);
+                            return await interaction.reply({
+                                content: '❌ An error occurred while processing the game result.',
+                                flags: [MessageFlags.Ephemeral]
+                            });
+                        }
 
+                        winnerProfile.balance += betAmount * 2;
                         await winnerProfile.save();
-                        await loserProfile.save();
 
-                        // Trigger balance change event
                         try {
                             const balanceChangeEvent = require('./balanceChange');
                             const winnerMember = await interaction.guild.members.fetch(winnerId);
-                            const loserMember = await interaction.guild.members.fetch(loserId);
                             balanceChangeEvent.execute(winnerMember);
-                            balanceChangeEvent.execute(loserMember);
+                        } catch (err) {
+                            console.error('Failed to trigger balance change event:', err);
+                        }
+                    } else {
+                        // ADD THIS TIE REFUND LOGIC:
+                        const challengerProfile = await profileModel.findOne({
+                            userId: challengerId,
+                            serverID: interaction.guild.id
+                        });
+                        const opponentProfile = await profileModel.findOne({
+                            userId: opponentId,
+                            serverID: interaction.guild.id
+                        });
+
+                        if (!challengerProfile || !opponentProfile) {
+                            console.error('Player profile not found during tie refund');
+                            return await interaction.reply({
+                                content: '❌ An error occurred while processing the refund.',
+                                flags: [MessageFlags.Ephemeral]
+                            });
+                        }
+
+                        challengerProfile.balance += betAmount;
+                        opponentProfile.balance += betAmount;
+
+                        await challengerProfile.save();
+                        await opponentProfile.save();
+
+                        try {
+                            const balanceChangeEvent = require('./balanceChange');
+                            const challengerMember = await interaction.guild.members.fetch(challengerId);
+                            const opponentMember = await interaction.guild.members.fetch(opponentId);
+                            balanceChangeEvent.execute(challengerMember);
+                            balanceChangeEvent.execute(opponentMember);
                         } catch (err) {
                             console.error('Failed to trigger balance change event:', err);
                         }
                     }
 
-                    // Create result embed
+                    // Create result embed - use winnerId instead of winner
+                    const winnerId = winner ? (winner === 'X' ? xPlayer : oPlayer) : null;
+
                     const resultEmbed = new EmbedBuilder()
                         .setTitle('⭕ Tic Tac Toe Results')
+                        .setDescription(winnerId ? `# 🎉 <@${winnerId}> wins!\n\n**Prize:** ${(betAmount * 2).toLocaleString()} points` : '🤝 It\'s a tie!\n\nBets have been refunded.')
                         .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
                         .setTimestamp();
 
-                    let description = '';
-                    if (winnerId) {
-                        description = `# 🎉 <@${winnerId}> WINS!\n\n`;
-                        description += `**Prize:** ${(betAmount * 2).toLocaleString()} points`;
-                    } else {
-                        description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.';
-                    }
-
-                    resultEmbed.setDescription(description);
-
-                    // Final board
                     const finalBoardButtons = createTicTacToeBoard(gameId, board, true);
 
                     await interaction.update({
@@ -822,7 +928,6 @@ module.exports = {
                         await gamesLogsChannel.send({ embeds: [logEmbed] });
                     }
 
-                    // Clean up game
                     global.activeTTTGames.delete(gameId);
                 } else {
                     // Continue game - switch turns
@@ -848,39 +953,148 @@ module.exports = {
                     });
                 }
             }
+            // Tic Tac Toe Forfeit Handler
+            if (interaction.customId.startsWith('ttt_forfeit_')) {
+                const gameId = interaction.customId.replace('ttt_forfeit_', '');
+
+                if (!global.activeTTTGames) {
+                    global.activeTTTGames = new Map();
+                }
+
+                const game = global.activeTTTGames.get(gameId);
+                if (!game) {
+                    return await interaction.reply({
+                        content: '❌ This game has expired or already finished.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                const { challengerId, opponentId, betAmount, xPlayer, oPlayer, board } = game;
+
+                // Verify it's a player in the game
+                if (interaction.user.id !== challengerId && interaction.user.id !== opponentId) {
+                    return await interaction.reply({
+                        content: '❌ You are not in this game.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Determine winner (the other player)
+                const loserId = interaction.user.id;
+                const winnerId = loserId === challengerId ? opponentId : challengerId;
+
+                // Award winnings to winner
+                const winnerProfile = await profileModel.findOne({
+                    userId: winnerId,
+                    serverID: interaction.guild.id
+                });
+
+                // Add null check
+                if (!winnerProfile) {
+                    console.error(`Winner profile not found for user ${winnerId}`);
+                    return await interaction.reply({
+                        content: '❌ An error occurred while processing the forfeit.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                winnerProfile.balance += betAmount * 2;
+                await winnerProfile.save();
+
+                // Trigger balance change event
+                try {
+                    const balanceChangeEvent = require('./balanceChange');
+                    const winnerMember = await interaction.guild.members.fetch(winnerId);
+                    balanceChangeEvent.execute(winnerMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+
+                // Create forfeit result embed
+                const resultEmbed = new EmbedBuilder()
+                    .setTitle('🏳️ Tic Tac Toe - Forfeit')
+                    .setDescription(
+                        `<@${loserId}> has forfeited the game!\n\n` +
+                        `🎉 <@${winnerId}> wins by forfeit!\n\n` +
+                        `**Prize:** ${(betAmount * 2).toLocaleString()} points`
+                    )
+                    .setColor(0x95A5A6)
+                    .setTimestamp();
+
+                const finalBoardButtons = createTicTacToeBoard(gameId, board, true);
+
+                await interaction.update({
+                    embeds: [resultEmbed],
+                    components: finalBoardButtons
+                });
+
+                // Log to games channel
+                const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+                if (gamesLogsChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('🏳️ Tic Tac Toe - Forfeit')
+                        .addFields(
+                            { name: 'X Player', value: `<@${xPlayer}>`, inline: true },
+                            { name: 'O Player', value: `<@${oPlayer}>`, inline: true },
+                            { name: 'Result', value: `<@${loserId}> forfeited - <@${winnerId}> wins!`, inline: false },
+                            { name: 'Prize', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
+                        )
+                        .setColor(0x95A5A6)
+                        .setTimestamp();
+
+                    await gamesLogsChannel.send({ embeds: [logEmbed] });
+                }
+
+                global.activeTTTGames.delete(gameId);
+            }
 
             // ...existing code...
 
             // Helper function to create Tic Tac Toe board buttons
             function createTicTacToeBoard(gameId, board, disabled = false) {
                 const rows = [];
-                for (let i = 0; i < 3; i++) {
-                    const row = new ActionRowBuilder();
-                    for (let j = 0; j < 3; j++) {
-                        const position = i * 3 + j;
-                        const cell = board[position];
+
+                // Create 3x3 grid
+                for (let row = 0; row < 3; row++) {
+                    const actionRow = new ActionRowBuilder();
+                    for (let col = 0; col < 3; col++) {
+                        const index = row * 3 + col;
+                        const cell = board[index];
 
                         let emoji = '⬜';
                         let style = ButtonStyle.Secondary;
 
                         if (cell === 'X') {
-                            emoji = '⭕';
+                            emoji = '❌';
                             style = ButtonStyle.Primary;
                         } else if (cell === 'O') {
-                            emoji = '❌';
+                            emoji = '⭕';
                             style = ButtonStyle.Danger;
                         }
 
-                        row.addComponents(
+                        actionRow.addComponents(
                             new ButtonBuilder()
-                                .setCustomId(`ttt_move_${position}_${gameId}`)
+                                .setCustomId(`ttt_move_${index}_${gameId}`)  // Changed from ttt_${index}_${gameId}
                                 .setEmoji(emoji)
                                 .setStyle(style)
                                 .setDisabled(disabled || cell !== '')
                         );
                     }
-                    rows.push(row);
+                    rows.push(actionRow);
                 }
+
+                // Add forfeit button row (only if game is active)
+                if (!disabled) {
+                    const forfeitRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`ttt_forfeit_${gameId}`)
+                            .setLabel('Forfeit Game')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('🏳️')
+                    );
+                    rows.push(forfeitRow);
+                }
+
                 return rows;
             }
 
@@ -936,15 +1150,32 @@ module.exports = {
                     return;
                 }
 
-                // Verify balances
-                const challengerProfile = await profileModel.findOne({
+                // Verify balances and ensure profiles exist
+                let challengerProfile = await profileModel.findOne({
                     userId: challengerId,
                     serverID: interaction.guild.id
                 });
-                const opponentProfile = await profileModel.findOne({
+                let opponentProfile = await profileModel.findOne({
                     userId: opponentId,
                     serverID: interaction.guild.id
                 });
+
+                // Create profiles if they don't exist
+                if (!challengerProfile) {
+                    challengerProfile = await profileModel.create({
+                        userId: challengerId,
+                        serverID: interaction.guild.id,
+                        balance: 100
+                    });
+                }
+
+                if (!opponentProfile) {
+                    opponentProfile = await profileModel.create({
+                        userId: opponentId,
+                        serverID: interaction.guild.id,
+                        balance: 100
+                    });
+                }
 
                 if (challengerProfile.balance < betAmount) {
                     await interaction.update({
@@ -964,6 +1195,24 @@ module.exports = {
                     return;
                 }
 
+                // OPTION 1: Deduct bets immediately
+                challengerProfile.balance -= betAmount;
+                opponentProfile.balance -= betAmount;
+
+                await challengerProfile.save();
+                await opponentProfile.save();
+
+                // Trigger balance change events
+                try {
+                    const balanceChangeEvent = require('./balanceChange');
+                    const challengerMember = await interaction.guild.members.fetch(challengerId);
+                    const opponentMember = await interaction.guild.members.fetch(opponentId);
+                    balanceChangeEvent.execute(challengerMember);
+                    balanceChangeEvent.execute(opponentMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+
                 // Initialize game
                 const gameId = `${challengerId}_${opponentId}_${Date.now()}`;
 
@@ -975,46 +1224,27 @@ module.exports = {
                     challengerId,
                     opponentId,
                     betAmount,
-                    board: Array(6).fill(null).map(() => Array(7).fill('')), // 6 rows x 7 columns
-                    currentTurn: challengerId, // Red goes first
+                    board: Array(6).fill(null).map(() => Array(7).fill('')),
+                    currentTurn: challengerId,
                     redPlayer: challengerId,
                     yellowPlayer: opponentId,
-                    messageId: interaction.message.id
+                    messageId: interaction.message.id,
+                    betsDeducted: true
                 });
 
-                // Create game board
-                const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board);
-                /*               
-                
-                                const gameEmbed = new EmbedBuilder()
-                                    .setTitle('🔴 Connect 4')
-                                    .setDescription(
-                                        `**Current Turn:** <@${challengerId}> (🔴)\n\n` +
-                                        `**Board:**\n` +
-                                        createConnect4BoardDisplay(global.activeC4Games.get(gameId).board)
-                                    )
-                                    .addFields(
-                                        { name: '🔴 Red Player', value: `<@${challengerId}>`, inline: true },
-                                        { name: '🟡 Yellow Player', value: `<@${opponentId}>`, inline: true },
-                                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
-                                    )
-                                    .setColor(0xE74C3C)
-                                    .setTimestamp();
-                
-                                await interaction.update({
-                                    content: `<@${challengerId}> vs <@${opponentId}>`,
-                                    embeds: [gameEmbed],
-                                    components: boardButtons
-                                }); */
+                // Create board buttons with forfeit option
+                const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board, false, challengerId);
+
+                // Create board image
                 const boardImage = createConnect4Image(global.activeC4Games.get(gameId).board);
 
                 const gameEmbed = new EmbedBuilder()
                     .setTitle('🔴 Connect 4')
-                    .setDescription(`**Current Turn:** <@${challengerId}> (🔴)`)
+                    .setDescription(`**Current Turn:** <@${challengerId}> (🔴)\n\n*Bets of ${betAmount.toLocaleString()} points have been deducted from both players.*`)
                     .addFields(
                         { name: '🔴 Red Player', value: `<@${challengerId}>`, inline: true },
                         { name: '🟡 Yellow Player', value: `<@${opponentId}>`, inline: true },
-                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                        { name: '💰 Prize Pool', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
                     )
                     .setColor(0xE74C3C)
                     .setImage('attachment://connect4.png')
@@ -1029,18 +1259,6 @@ module.exports = {
                     }],
                     components: boardButtons
                 });
-
-                // Game timeout
-                setTimeout(() => {
-                    if (global.activeC4Games && global.activeC4Games.has(gameId)) {
-                        global.activeC4Games.delete(gameId);
-                        interaction.message.edit({
-                            content: '⏱️ Game expired - no moves were made in time.',
-                            embeds: [],
-                            components: []
-                        }).catch(() => { });
-                    }
-                }, 10 * 60 * 1000); // 10 minutes
             }
 
             // Connect 4 Move Handler
@@ -1113,47 +1331,72 @@ module.exports = {
                         winnerId = yellowPlayer;
                     }
 
-                    // Update balances
+                    // Update balances - ADD winnings instead of deducting
                     if (winnerId) {
                         const winnerProfile = await profileModel.findOne({
                             userId: winnerId,
                             serverID: interaction.guild.id
                         });
-                        const loserId = winnerId === challengerId ? opponentId : challengerId;
-                        const loserProfile = await profileModel.findOne({
-                            userId: loserId,
-                            serverID: interaction.guild.id
-                        });
 
-                        winnerProfile.balance += betAmount;
-                        loserProfile.balance -= betAmount;
+                        if (!winnerProfile) {
+                            console.error(`Winner profile not found for user ${winnerId}`);
+                            return await interaction.reply({
+                                content: '❌ An error occurred while processing the game result.',
+                                flags: [MessageFlags.Ephemeral]
+                            });
+                        }
 
+                        winnerProfile.balance += betAmount * 2;
                         await winnerProfile.save();
-                        await loserProfile.save();
 
-                        // Trigger balance change event
                         try {
                             const balanceChangeEvent = require('./balanceChange');
                             const winnerMember = await interaction.guild.members.fetch(winnerId);
-                            const loserMember = await interaction.guild.members.fetch(loserId);
                             balanceChangeEvent.execute(winnerMember);
-                            balanceChangeEvent.execute(loserMember);
+                        } catch (err) {
+                            console.error('Failed to trigger balance change event:', err);
+                        }
+                    } else {
+                        // tie refund bets.
+                        const challengerProfile = await profileModel.findOne({
+                            userId: challengerId,
+                            serverID: interaction.guild.id
+                        });
+                        const opponentProfile = await profileModel.findOne({
+                            userId: opponentId,
+                            serverID: interaction.guild.id
+                        });
+
+                        //null check
+                        if (!challengerProfile || !opponentProfile) {
+                            console.error('Player profile not found during tie refund');
+                            return await interaction.reply({
+                                content: '❌ An error occurred while processing the refund.',
+                                flags: [MessageFlags.Ephemeral]
+                            });
+                        }
+
+                        challengerProfile.balance += betAmount;
+                        opponentProfile.balance += betAmount;
+
+                        await challengerProfile.save();
+                        await opponentProfile.save();
+
+                        try {
+                            const balanceChangeEvent = require('./balanceChange');
+                            const challengerMember = await interaction.guild.members.fetch(challengerId);
+                            const opponentMember = await interaction.guild.members.fetch(opponentId);
+                            balanceChangeEvent.execute(challengerMember);
+                            balanceChangeEvent.execute(opponentMember);
                         } catch (err) {
                             console.error('Failed to trigger balance change event:', err);
                         }
                     }
 
                     // Create result embed WITH BOARD DISPLAY
-                    /*  const resultEmbed = new EmbedBuilder()
-                         .setTitle('🔴 Connect 4 Results')
-                         .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
-                         .setTimestamp(); */
-                    const finalBoardImage = createConnect4Image(board);
-
                     const resultEmbed = new EmbedBuilder()
                         .setTitle('🔴 Connect 4 Results')
                         .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
-                        .setImage('attachment://connect4.png')
                         .setTimestamp();
 
                     let description = '';
@@ -1165,18 +1408,13 @@ module.exports = {
                         description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.\n\n';
                     }
 
-                    // Add the final board state to the description
-                    //description += `**Final Board:**\n${createConnect4BoardDisplay(board)}`;
+                    description += `**Final Board:**\n${createConnect4BoardDisplay(board)}`;
 
                     resultEmbed.setDescription(description);
 
-                    // Final board buttons (disabled)
+                    const finalBoardImage = createConnect4Image(board);
                     const finalBoardButtons = createConnect4Board(gameId, board, true);
 
-                    /*    await interaction.update({
-                           embeds: [resultEmbed],
-                           components: finalBoardButtons
-                       }); */
                     await interaction.update({
                         embeds: [resultEmbed],
                         files: [{
@@ -1204,7 +1442,6 @@ module.exports = {
                         await gamesLogsChannel.send({ embeds: [logEmbed] });
                     }
 
-                    // Clean up game
                     global.activeC4Games.delete(gameId);
                 } else {
                     // Continue game - switch turns
@@ -1259,15 +1496,112 @@ module.exports = {
 
                 }
             }
+            if (interaction.customId.startsWith('c4_forfeit_')) {
+                const gameId = interaction.customId.replace('c4_forfeit_', '');
+
+                if (!global.activeC4Games) {
+                    global.activeC4Games = new Map();
+                }
+
+                const game = global.activeC4Games.get(gameId);
+                if (!game) {
+                    return await interaction.reply({
+                        content: '❌ This game has expired or already finished.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                const { challengerId, opponentId, betAmount, redPlayer, yellowPlayer, board } = game;
+
+                // Verify it's a player in the game
+                if (interaction.user.id !== challengerId && interaction.user.id !== opponentId) {
+                    return await interaction.reply({
+                        content: '❌ You are not in this game.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                // Determine winner (the other player)
+                const loserId = interaction.user.id;
+                const winnerId = loserId === challengerId ? opponentId : challengerId;
+
+                // Award winnings to winner
+                const winnerProfile = await profileModel.findOne({
+                    userId: winnerId,
+                    serverID: interaction.guild.id
+                });
+
+                // Add null check
+                if (!winnerProfile) {
+                    console.error(`Winner profile not found for user ${winnerId}`);
+                    return await interaction.reply({
+                        content: '❌ An error occurred while processing the forfeit.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
+                }
+
+                winnerProfile.balance += betAmount * 2;
+                await winnerProfile.save();
+
+                // Trigger balance change event
+                try {
+                    const balanceChangeEvent = require('./balanceChange');
+                    const winnerMember = await interaction.guild.members.fetch(winnerId);
+                    balanceChangeEvent.execute(winnerMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+
+                // Create forfeit result embed
+                const resultEmbed = new EmbedBuilder()
+                    .setTitle('🏳️ Connect 4 - Forfeit')
+                    .setDescription(
+                        `<@${loserId}> has forfeited the game!\n\n` +
+                        `🎉 <@${winnerId}> wins by forfeit!\n\n` +
+                        `**Prize:** ${(betAmount * 2).toLocaleString()} points\n\n` +
+                        `**Final Board:**\n${createConnect4BoardDisplay(board)}`
+                    )
+                    .setColor(0x95A5A6)
+                    .setTimestamp();
+
+                const finalBoardImage = createConnect4Image(board);
+
+                await interaction.update({
+                    embeds: [resultEmbed],
+                    files: [{
+                        attachment: finalBoardImage,
+                        name: 'connect4.png'
+                    }],
+                    components: []
+                });
+
+                // Log to games channel
+                const gamesLogsChannel = interaction.guild.channels.cache.get(process.env.GAMES_LOGS_CHANNEL_ID);
+                if (gamesLogsChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('🏳️ Connect 4 - Forfeit')
+                        .addFields(
+                            { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
+                            { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
+                            { name: 'Result', value: `<@${loserId}> forfeited - <@${winnerId}> wins!`, inline: false },
+                            { name: 'Prize', value: `${(betAmount * 2).toLocaleString()} points`, inline: true }
+                        )
+                        .setColor(0x95A5A6)
+                        .setTimestamp();
+
+                    await gamesLogsChannel.send({ embeds: [logEmbed] });
+                }
+
+                global.activeC4Games.delete(gameId);
+            }
 
             // ...existing code...
 
             // Helper function to create Connect 4 board buttons
-            function createConnect4Board(gameId, board, disabled = false) {
+            function createConnect4Board(gameId, board, disabled = false, currentTurn = null) {
                 const rows = [];
 
-                // All 7 column drop buttons in a single row (Discord allows up to 5 buttons per row)
-                // We'll use 2 rows but make them compact: 4 buttons + 3 buttons
+                // Column drop buttons - split into 2 rows (4 + 3 columns)
                 const columnRow1 = new ActionRowBuilder();
                 for (let col = 0; col < 4; col++) {
                     columnRow1.addComponents(
@@ -1290,8 +1624,18 @@ module.exports = {
                             .setDisabled(disabled || board[0][col] !== '')
                     );
                 }
-                // Add empty placeholder buttons to align with the board visually (optional)
-                // This makes the 3-button row appear more centered
+
+                // Add forfeit button (only if game is active)
+                if (!disabled) {
+                    columnRow2.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`c4_forfeit_${gameId}`)
+                            .setLabel('Forfeit')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('🏳️')
+                    );
+                }
+
                 rows.push(columnRow2);
 
                 return rows;
