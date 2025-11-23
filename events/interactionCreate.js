@@ -14,6 +14,8 @@ if (!global.activeC4Games) {
     global.activeC4Games = new Map();
 }
 
+const { createConnect4Image } = require('../utils/connect4Canvas');
+
 
 
 const activeRPSGames = new Map();
@@ -982,6 +984,29 @@ module.exports = {
 
                 // Create game board
                 const boardButtons = createConnect4Board(gameId, global.activeC4Games.get(gameId).board);
+                /*               
+                
+                                const gameEmbed = new EmbedBuilder()
+                                    .setTitle('🔴 Connect 4')
+                                    .setDescription(
+                                        `**Current Turn:** <@${challengerId}> (🔴)\n\n` +
+                                        `**Board:**\n` +
+                                        createConnect4BoardDisplay(global.activeC4Games.get(gameId).board)
+                                    )
+                                    .addFields(
+                                        { name: '🔴 Red Player', value: `<@${challengerId}>`, inline: true },
+                                        { name: '🟡 Yellow Player', value: `<@${opponentId}>`, inline: true },
+                                        { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                                    )
+                                    .setColor(0xE74C3C)
+                                    .setTimestamp();
+                
+                                await interaction.update({
+                                    content: `<@${challengerId}> vs <@${opponentId}>`,
+                                    embeds: [gameEmbed],
+                                    components: boardButtons
+                                }); */
+                const boardImage = createConnect4Image(global.activeC4Games.get(gameId).board);
 
                 const gameEmbed = new EmbedBuilder()
                     .setTitle('🔴 Connect 4')
@@ -992,11 +1017,16 @@ module.exports = {
                         { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
                     )
                     .setColor(0xE74C3C)
+                    .setImage('attachment://connect4.png')
                     .setTimestamp();
 
                 await interaction.update({
                     content: `<@${challengerId}> vs <@${opponentId}>`,
                     embeds: [gameEmbed],
+                    files: [{
+                        attachment: boardImage,
+                        name: 'connect4.png'
+                    }],
                     components: boardButtons
                 });
 
@@ -1113,28 +1143,46 @@ module.exports = {
                         }
                     }
 
-                    // Create result embed
+                    // Create result embed WITH BOARD DISPLAY
+                    /*  const resultEmbed = new EmbedBuilder()
+                         .setTitle('🔴 Connect 4 Results')
+                         .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+                         .setTimestamp(); */
+                    const finalBoardImage = createConnect4Image(board);
+
                     const resultEmbed = new EmbedBuilder()
                         .setTitle('🔴 Connect 4 Results')
                         .setColor(winnerId ? (winnerId === redPlayer ? 0xE74C3C : 0xF1C40F) : 0x95A5A6)
+                        .setImage('attachment://connect4.png')
                         .setTimestamp();
 
                     let description = '';
                     if (winnerId) {
                         const emoji = winnerId === redPlayer ? '🔴' : '🟡';
                         description = `# 🎉 ${emoji} <@${winnerId}> WINS!\n\n`;
-                        description += `**Prize:** ${(betAmount * 2).toLocaleString()} points`;
+                        description += `**Prize:** ${(betAmount * 2).toLocaleString()} points\n\n`;
                     } else {
-                        description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.';
+                        description = '## 🤝 It\'s a Tie!\n\nBets have been refunded.\n\n';
                     }
+
+                    // Add the final board state to the description
+                    //description += `**Final Board:**\n${createConnect4BoardDisplay(board)}`;
 
                     resultEmbed.setDescription(description);
 
-                    // Final board
+                    // Final board buttons (disabled)
                     const finalBoardButtons = createConnect4Board(gameId, board, true);
 
+                    /*    await interaction.update({
+                           embeds: [resultEmbed],
+                           components: finalBoardButtons
+                       }); */
                     await interaction.update({
                         embeds: [resultEmbed],
+                        files: [{
+                            attachment: finalBoardImage,
+                            name: 'connect4.png'
+                        }],
                         components: finalBoardButtons
                     });
 
@@ -1163,6 +1211,29 @@ module.exports = {
                     game.currentTurn = currentTurn === challengerId ? opponentId : challengerId;
                     const nextSymbol = game.currentTurn === redPlayer ? 'Red (🔴)' : 'Yellow (🟡)';
 
+                    /*                     const updatedEmbed = new EmbedBuilder()
+                                            .setTitle('🔴 Connect 4')
+                                            .setDescription(
+                                                `**Current Turn:** <@${game.currentTurn}> (${nextSymbol})\n\n` +
+                                                `**Board:**\n` +
+                                                createConnect4BoardDisplay(board)
+                                            )
+                                            .addFields(
+                                                { name: '🔴 Red Player', value: `<@${redPlayer}>`, inline: true },
+                                                { name: '🟡 Yellow Player', value: `<@${yellowPlayer}>`, inline: true },
+                                                { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
+                                            )
+                                            .setColor(game.currentTurn === redPlayer ? 0xE74C3C : 0xF1C40F)
+                                            .setTimestamp();
+                    
+                                        const updatedBoardButtons = createConnect4Board(gameId, board);
+                    
+                                        await interaction.update({
+                                            embeds: [updatedEmbed],
+                                            components: updatedBoardButtons
+                                        }); */
+                    const updatedBoardImage = createConnect4Image(board);
+
                     const updatedEmbed = new EmbedBuilder()
                         .setTitle('🔴 Connect 4')
                         .setDescription(`**Current Turn:** <@${game.currentTurn}> (${nextSymbol})`)
@@ -1172,14 +1243,20 @@ module.exports = {
                             { name: '💰 Bet', value: `${betAmount.toLocaleString()} points each`, inline: true }
                         )
                         .setColor(game.currentTurn === redPlayer ? 0xE74C3C : 0xF1C40F)
+                        .setImage('attachment://connect4.png')
                         .setTimestamp();
 
                     const updatedBoardButtons = createConnect4Board(gameId, board);
 
                     await interaction.update({
                         embeds: [updatedEmbed],
+                        files: [{
+                            attachment: updatedBoardImage,
+                            name: 'connect4.png'
+                        }],
                         components: updatedBoardButtons
                     });
+
                 }
             }
 
@@ -1189,10 +1266,11 @@ module.exports = {
             function createConnect4Board(gameId, board, disabled = false) {
                 const rows = [];
 
-                // Column number buttons (to drop pieces)
-                const columnRow = new ActionRowBuilder();
-                for (let col = 0; col < 7; col++) {
-                    columnRow.addComponents(
+                // All 7 column drop buttons in a single row (Discord allows up to 5 buttons per row)
+                // We'll use 2 rows but make them compact: 4 buttons + 3 buttons
+                const columnRow1 = new ActionRowBuilder();
+                for (let col = 0; col < 4; col++) {
+                    columnRow1.addComponents(
                         new ButtonBuilder()
                             .setCustomId(`c4_drop_${col}_${gameId}`)
                             .setLabel(`${col + 1}`)
@@ -1200,36 +1278,49 @@ module.exports = {
                             .setDisabled(disabled || board[0][col] !== '')
                     );
                 }
-                rows.push(columnRow);
+                rows.push(columnRow1);
 
-                // Board display (first 5 rows - Discord limit is 5 action rows)
-                for (let row = 0; row < 5; row++) {
-                    const boardRow = new ActionRowBuilder();
-                    for (let col = 0; col < 7; col++) {
-                        const cell = board[row][col];
-                        let emoji = '⚪';
-                        let style = ButtonStyle.Secondary;
-
-                        if (cell === 'R') {
-                            emoji = '🔴';
-                            style = ButtonStyle.Danger;
-                        } else if (cell === 'Y') {
-                            emoji = '🟡';
-                            style = ButtonStyle.Primary;
-                        }
-
-                        boardRow.addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`c4_cell_${row}_${col}_${gameId}`)
-                                .setEmoji(emoji)
-                                .setStyle(style)
-                                .setDisabled(true) // Display only
-                        );
-                    }
-                    rows.push(boardRow);
+                const columnRow2 = new ActionRowBuilder();
+                for (let col = 4; col < 7; col++) {
+                    columnRow2.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`c4_drop_${col}_${gameId}`)
+                            .setLabel(`${col + 1}`)
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(disabled || board[0][col] !== '')
+                    );
                 }
+                // Add empty placeholder buttons to align with the board visually (optional)
+                // This makes the 3-button row appear more centered
+                rows.push(columnRow2);
 
                 return rows;
+            }
+            /*             function createConnect4BoardDisplay(board) {
+                            const emojis = {
+                                '': '⚪',
+                                'R': '🔴',
+                                'Y': '🟡'
+                            };
+            
+                            // Use monospace formatting for better alignment
+                            let display = '```\n';
+                            display += '1  2  3  4  5  6  7\n';
+                            display += '```';
+            
+                            // Create each row of the board
+                            for (let row = 0; row < 6; row++) {
+                                display += board[row].map(cell => emojis[cell] || '⚪').join(' ') + '\n';
+                            }
+            
+                            return display;
+                        } */
+            // Remove or comment out the old createConnect4BoardDisplay function
+            // Replace it with this version that returns nothing (we'll use attachments instead)
+            function createConnect4BoardDisplay(board) {
+                // This function is no longer needed for text display
+                // Keeping it for backward compatibility if needed
+                return '';
             }
 
             // Helper function to check for Connect 4 winner
