@@ -1,7 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const lotteryModel = require('../models/lotterySchema');
 const lotteryCooldownModel = require('../models/lotteryCooldownSchema');
-const dbUtils = require('../utils/dbUtils');
+const dbUtils = require('./dbUtils');
 
 const LOTTERIES_CHANNEL_ID = process.env.LOTTERIES_CHANNEL_ID;
 const LOTTERY_LOGS_CHANNEL_ID = process.env.LOTTERY_LOGS_CHANNEL_ID;
@@ -17,8 +17,8 @@ const RAFFLE_LOTTERY_COOLDOWN = 8 * 60 * 60 * 1000; // 8 hours
 
 const ANIMAL_LOTTERY_COST = 500;
 const ANIMAL_LOTTERY_STARTING_POOL = 5000;
-const ANIMAL_LOTTERY_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-const ANIMAL_LOTTERY_COOLDOWN = 24 * 60 * 60 * 1000; // 24 hours
+const ANIMAL_LOTTERY_DURATION = 48 * 60 * 60 * 1000; // 48 hours
+const ANIMAL_LOTTERY_COOLDOWN = 32 * 60 * 60 * 1000; // 32 hours
 const ANIMAL_LOTTERY_ANIMALS = ['🐎', '🐢', '🐇', '🦘', '🦎', '🐶', '🐱', '🦅', '🦁'];
 
 const LOTTERY_ARCHIVAL_DELAY = 3 * 60 * 60 * 1000; // 3 hours

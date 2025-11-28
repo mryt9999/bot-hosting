@@ -1,7 +1,7 @@
 {
     "pointMultiplier": 1,
-    "dailyMin": 500,
-    "dailyMax": 1000,
+    "dailyMin": 1000,
+    "dailyMax": 2000,
     "maxWithdrawPerWeek": 50000,
     "maxGlobalWithdrawPerWeek": 300000,
     "minPointsPerWithdraw": 10000,

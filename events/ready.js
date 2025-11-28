@@ -7,6 +7,7 @@ const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker
 const { recoverCrashedGames } = require('../utils/gameRecovery');
 
 const lotteryModel = require('../models/lotterySchema');
+const lotteryCooldownModel = require('../models/lotteryCooldownSchema');
 const {
     scheduleRaffleEnd,
     scheduleAnimalRaceEnd,
@@ -43,7 +44,7 @@ module.exports = {
             console.error('Failed to reschedule active loans:', error);
         }
 
-        // Start pending loan cleanup //
+        // Start pending loan cleanup
         try {
             startPendingLoanCleanup(client);
         } catch (error) {
@@ -106,7 +107,6 @@ module.exports = {
                 const timeSinceEnd = Date.now() - (lottery.endedAt || 0);
 
                 if (timeSinceEnd >= LOTTERY_ARCHIVAL_DELAY) {
-                    // Should have been archived - do it now
                     console.log(`[Lottery] Archiving lottery that ended during downtime: ${lottery._id}`);
 
                     const winnerId = lottery.winnerId;
@@ -116,7 +116,6 @@ module.exports = {
 
                     await archiveLottery(lottery, client, winnerId, winningNumber);
                 } else {
-                    // Schedule for remaining time
                     const delay = LOTTERY_ARCHIVAL_DELAY - timeSinceEnd;
                     console.log(`[Lottery] Scheduling delayed archival for ${lottery._id} in ${Math.round(delay / 1000)}s`);
 
@@ -132,13 +131,13 @@ module.exports = {
             console.error('Error recovering unarchived lotteries:', error);
         }
 
-        // Auto-create lotteries if none exist
+        // Auto-create lotteries with cooldown awareness
         try {
             setTimeout(async () => {
                 for (const [guildId, guild] of client.guilds.cache) {
                     console.log(`[Lottery] Checking lotteries for guild: ${guild.name} (${guildId})`);
 
-                    // Check for active number lottery
+                    // === NUMBER LOTTERY ===
                     const activeNumberLottery = await lotteryModel.findOne({
                         serverID: guildId,
                         type: 'number',
@@ -146,18 +145,33 @@ module.exports = {
                     });
 
                     if (!activeNumberLottery) {
-                        console.log('[Lottery] No active number lottery found, creating one...');
-                        const created = await createNumberLottery(client, guildId);
-                        if (created) {
-                            console.log(`[Lottery] ✅ Created number lottery: ${created._id}`);
+                        const numberCooldown = await lotteryCooldownModel.findOne({
+                            serverID: guildId,
+                            type: 'number'
+                        });
+
+                        if (numberCooldown && Date.now() < numberCooldown.nextAvailableAt) {
+                            const delay = numberCooldown.nextAvailableAt - Date.now();
+                            console.log(`[Lottery] Number lottery on cooldown, scheduling in ${Math.round(delay / 1000)}s`);
+
+                            setTimeout(async () => {
+                                const created = await createNumberLottery(client, guildId);
+                                if (created) {
+                                    console.log(`[Lottery] ✅ Created number lottery after cooldown: ${created._id}`);
+                                }
+                            }, delay);
                         } else {
-                            console.log('[Lottery] ❌ Failed to create number lottery (may be on cooldown)');
+                            console.log('[Lottery] No active number lottery found, creating one...');
+                            const created = await createNumberLottery(client, guildId);
+                            if (created) {
+                                console.log(`[Lottery] ✅ Created number lottery: ${created._id}`);
+                            }
                         }
                     } else {
                         console.log(`[Lottery] Number lottery already active: ${activeNumberLottery._id}`);
                     }
 
-                    // Check for active raffle lottery
+                    // === RAFFLE LOTTERY ===
                     const activeRaffleLottery = await lotteryModel.findOne({
                         serverID: guildId,
                         type: 'raffle',
@@ -165,18 +179,33 @@ module.exports = {
                     });
 
                     if (!activeRaffleLottery) {
-                        console.log('[Lottery] No active raffle lottery found, creating one...');
-                        const created = await createRaffleLottery(client, guildId);
-                        if (created) {
-                            console.log(`[Lottery] ✅ Created raffle lottery: ${created._id}`);
+                        const raffleCooldown = await lotteryCooldownModel.findOne({
+                            serverID: guildId,
+                            type: 'raffle'
+                        });
+
+                        if (raffleCooldown && Date.now() < raffleCooldown.nextAvailableAt) {
+                            const delay = raffleCooldown.nextAvailableAt - Date.now();
+                            console.log(`[Lottery] Raffle lottery on cooldown, scheduling in ${Math.round(delay / 1000)}s`);
+
+                            setTimeout(async () => {
+                                const created = await createRaffleLottery(client, guildId);
+                                if (created) {
+                                    console.log(`[Lottery] ✅ Created raffle lottery after cooldown: ${created._id}`);
+                                }
+                            }, delay);
                         } else {
-                            console.log('[Lottery] ❌ Failed to create raffle lottery (may be on cooldown)');
+                            console.log('[Lottery] No active raffle lottery found, creating one...');
+                            const created = await createRaffleLottery(client, guildId);
+                            if (created) {
+                                console.log(`[Lottery] ✅ Created raffle lottery: ${created._id}`);
+                            }
                         }
                     } else {
                         console.log(`[Lottery] Raffle lottery already active: ${activeRaffleLottery._id}`);
                     }
 
-                    // Check for active animal race lottery
+                    // === ANIMAL RACE LOTTERY ===
                     const activeAnimalLottery = await lotteryModel.findOne({
                         serverID: guildId,
                         type: 'animal',
@@ -184,12 +213,27 @@ module.exports = {
                     });
 
                     if (!activeAnimalLottery) {
-                        console.log('[Lottery] No active animal race lottery found, creating one...');
-                        const created = await createAnimalLottery(client, guildId);
-                        if (created) {
-                            console.log(`[Lottery] ✅ Created animal race lottery: ${created._id}`);
+                        const animalCooldown = await lotteryCooldownModel.findOne({
+                            serverID: guildId,
+                            type: 'animal'
+                        });
+
+                        if (animalCooldown && Date.now() < animalCooldown.nextAvailableAt) {
+                            const delay = animalCooldown.nextAvailableAt - Date.now();
+                            console.log(`[Lottery] Animal race lottery on cooldown, scheduling in ${Math.round(delay / 1000)}s`);
+
+                            setTimeout(async () => {
+                                const created = await createAnimalLottery(client, guildId);
+                                if (created) {
+                                    console.log(`[Lottery] ✅ Created animal race lottery after cooldown: ${created._id}`);
+                                }
+                            }, delay);
                         } else {
-                            console.log('[Lottery] ❌ Failed to create animal race lottery (may be on cooldown)');
+                            console.log('[Lottery] No active animal race lottery found, creating one...');
+                            const created = await createAnimalLottery(client, guildId);
+                            if (created) {
+                                console.log(`[Lottery] ✅ Created animal race lottery: ${created._id}`);
+                            }
                         }
                     } else {
                         console.log(`[Lottery] Animal race lottery already active: ${activeAnimalLottery._id}`);
