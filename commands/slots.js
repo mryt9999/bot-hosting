@@ -66,39 +66,39 @@ module.exports = {
 };
 
 /**
- * Get weighted random symbol (balanced for 50/50)
+ * Get weighted random symbol (balanced for house edge)
  */
 function getSymbol() {
     const rand = Math.random() * 100;
 
-    // Ultra Rare (1% total)
-    if (rand < 0.5) {
-        return '💰'; // 0.5%
+    // Ultra Rare (0.6% total)
+    if (rand < 0.3) {
+        return '💰'; // 0.3%
     }
-    if (rand < 1) {
-        return '👑'; // 0.5%
-    }
-
-    // Super Rare (4% total)
-    if (rand < 2) {
-        return '💎'; // 1%
-    }
-    if (rand < 3.5) {
-        return '7️⃣'; // 1.5%
-    }
-    if (rand < 5) {
-        return '⭐'; // 1.5%
+    if (rand < 0.6) {
+        return '👑'; // 0.3%
     }
 
-    // Rare (10% total)
-    if (rand < 8) {
-        return '🍇'; // 3%
+    // Super Rare (2.4% total)
+    if (rand < 1.2) {
+        return '💎'; // 0.6%
     }
-    if (rand < 12) {
+    if (rand < 2.1) {
+        return '7️⃣'; // 0.9%
+    }
+    if (rand < 3.0) {
+        return '⭐'; // 0.9%
+    }
+
+    // Rare (12% total)
+    if (rand < 7) {
+        return '🍇'; // 4%
+    }
+    if (rand < 11) {
         return '🍊'; // 4%
     }
     if (rand < 15) {
-        return '🍉'; // 3%
+        return '🍉'; // 4%
     }
 
     // Common (85% total)
@@ -109,32 +109,20 @@ function getSymbol() {
 }
 
 /**
- * Calculate payout (true 50/50 balanced)
+ * Calculate payout (true 50/50 balanced with house edge)
  */
 function calculatePayout(reel1, reel2, reel3, betAmount) {
-    // Check for triple match
+    // Check for triple match (jackpot)
     if (reel1 === reel2 && reel2 === reel3) {
         return getTripleMatchPayout(reel1, betAmount);
     }
 
-    // Check for double match
+    // Check for double match (reduced payouts)
     if (reel1 === reel2 || reel2 === reel3 || reel1 === reel3) {
         return getDoubleMatchPayout(reel1, reel2, reel3, betAmount);
     }
 
-    // Check for premium symbol (small consolation)
-    const premiumSymbols = ['💰', '👑', '💎', '7️⃣', '⭐'];
-    const hasPremium = [reel1, reel2, reel3].some(s => premiumSymbols.includes(s));
-
-    if (hasPremium) {
-        return {
-            multiplier: 0.2,
-            message: '✨ **Premium Symbol!** You get 20% back.',
-            color: 0x95A5A6
-        };
-    }
-
-    // Total loss
+    // Total loss (no consolation prizes)
     return {
         multiplier: 0,
         message: '💔 **No Match!** Better luck next time.',
@@ -143,20 +131,20 @@ function calculatePayout(reel1, reel2, reel3, betAmount) {
 }
 
 /**
- * Triple match payouts
+ * Triple match payouts (big wins but rare)
  */
 function getTripleMatchPayout(symbol, betAmount) {
     const payouts = {
         '💰': { mult: 100, msg: '🎰💰🎰 **MEGA JACKPOT!!!** Triple Money Bags!', color: 0xFFD700 },
         '👑': { mult: 50, msg: '👑👑👑 **ROYAL FLUSH!** Triple Crowns!', color: 0x9B59B6 },
-        '💎': { mult: 25, msg: '💎💎💎 **DIAMOND TRIPLE!**', color: 0x3498DB },
-        '7️⃣': { mult: 20, msg: '7️⃣7️⃣7️⃣ **TRIPLE SEVENS!**', color: 0xFF0000 },
-        '⭐': { mult: 15, msg: '⭐⭐⭐ **TRIPLE STARS!**', color: 0xF39C12 },
-        '🍇': { mult: 8, msg: '🍇🍇🍇 **TRIPLE GRAPES!**', color: 0x8E44AD },
-        '🍊': { mult: 6, msg: '🍊🍊🍊 **TRIPLE ORANGES!**', color: 0xE67E22 },
-        '🍉': { mult: 5, msg: '🍉🍉🍉 **TRIPLE MELONS!**', color: 0xE74C3C },
-        '🍒': { mult: 3, msg: '🍒🍒🍒 **TRIPLE CHERRIES!**', color: 0xC0392B },
-        '🍋': { mult: 2, msg: '🍋🍋🍋 **TRIPLE LEMONS!**', color: 0xF1C40F }
+        '💎': { mult: 30, msg: '💎💎💎 **DIAMOND TRIPLE!**', color: 0x3498DB },
+        '7️⃣': { mult: 25, msg: '7️⃣7️⃣7️⃣ **TRIPLE SEVENS!**', color: 0xFF0000 },
+        '⭐': { mult: 20, msg: '⭐⭐⭐ **TRIPLE STARS!**', color: 0xF39C12 },
+        '🍇': { mult: 10, msg: '🍇🍇🍇 **TRIPLE GRAPES!**', color: 0x8E44AD },
+        '🍊': { mult: 8, msg: '🍊🍊🍊 **TRIPLE ORANGES!**', color: 0xE67E22 },
+        '🍉': { mult: 6, msg: '🍉🍉🍉 **TRIPLE MELONS!**', color: 0xE74C3C },
+        '🍒': { mult: 4, msg: '🍒🍒🍒 **TRIPLE CHERRIES!**', color: 0xC0392B },
+        '🍋': { mult: 3, msg: '🍋🍋🍋 **TRIPLE LEMONS!**', color: 0xF1C40F }
     };
 
     const payout = payouts[symbol] || payouts['🍋'];
@@ -168,7 +156,7 @@ function getTripleMatchPayout(symbol, betAmount) {
 }
 
 /**
- * Double match payouts
+ * Double match payouts (much lower to maintain house edge)
  */
 function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
     // Find matched symbol
@@ -176,16 +164,16 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
     const matched = symbols.find((s, i) => symbols.indexOf(s) !== i);
 
     const payouts = {
-        '💰': { mult: 8, tier: 'ultra' },
-        '👑': { mult: 6, tier: 'ultra' },
-        '💎': { mult: 4, tier: 'super' },
-        '7️⃣': { mult: 3.5, tier: 'super' },
-        '⭐': { mult: 3, tier: 'super' },
-        '🍇': { mult: 2, tier: 'rare' },
-        '🍊': { mult: 1.8, tier: 'rare' },
-        '🍉': { mult: 1.5, tier: 'rare' },
-        '🍒': { mult: 1.2, tier: 'common' },
-        '🍋': { mult: 1, tier: 'common' }
+        '💰': { mult: 5, tier: 'ultra' },
+        '👑': { mult: 4, tier: 'ultra' },
+        '💎': { mult: 2.5, tier: 'super' },
+        '7️⃣': { mult: 2, tier: 'super' },
+        '⭐': { mult: 1.8, tier: 'super' },
+        '🍇': { mult: 1.5, tier: 'rare' },
+        '🍊': { mult: 1.3, tier: 'rare' },
+        '🍉': { mult: 1.2, tier: 'rare' },
+        '🍒': { mult: 0.5, tier: 'common' },  // Loss but reduced
+        '🍋': { mult: 0.3, tier: 'common' }   // Loss but get something back
     };
 
     const payout = payouts[matched] || payouts['🍋'];
@@ -193,7 +181,7 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
 
     return {
         multiplier: payout.mult,
-        message: `✨ **DOUBLE ${matched}!** You won ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
+        message: `✨ **DOUBLE ${matched}!** You ${payout.mult >= 1 ? 'won' : 'get back'} ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
         color: colors[payout.tier]
     };
 }

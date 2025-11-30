@@ -293,8 +293,8 @@ async function handleTTTMove(interaction) {
             .setTitle('❌ Tic Tac Toe - Results')
             .setDescription(
                 winnerId
-                    ? `🎉 **<@${winnerId}> wins ${(betAmount * 2).toLocaleString()} points!**`
-                    : '🤝 **It\'s a tie!** Bets refunded.'
+                    ? `# 🎉 **<@${winnerId}> wins ${(betAmount * 2).toLocaleString()} points!**`
+                    : '# 🤝 **It\'s a tie!** Bets refunded.'
             )
             .setColor(winnerId ? 0x2ECC71 : 0x95A5A6)
             .setTimestamp();
@@ -398,7 +398,7 @@ async function handleTTTForfeit(interaction) {
         .setTitle('🏳️ Tic Tac Toe - Forfeit')
         .setDescription(
             `<@${loserId}> has forfeited the game!\n\n` +
-            `🎉 <@${winnerId}> wins by forfeit!\n\n` +
+            `# 🎉 <@${winnerId}> wins by forfeit!\n\n` +
             `**Prize:** ${(betAmount * 2).toLocaleString()} points`
         )
         .setColor(0x95A5A6)
