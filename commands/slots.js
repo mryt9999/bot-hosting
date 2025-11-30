@@ -165,15 +165,15 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
 
     const payouts = {
         '💰': { mult: 5, tier: 'ultra' },
-        '👑': { mult: 4, tier: 'ultra' },
+        '👑': { mult: 3, tier: 'ultra' },
         '💎': { mult: 2.5, tier: 'super' },
         '7️⃣': { mult: 2, tier: 'super' },
-        '⭐': { mult: 1.8, tier: 'super' },
+        '⭐': { mult: 1.7, tier: 'super' },
         '🍇': { mult: 1.5, tier: 'rare' },
-        '🍊': { mult: 1.3, tier: 'rare' },
-        '🍉': { mult: 1.2, tier: 'rare' },
-        '🍒': { mult: 0.5, tier: 'common' },  // Loss but reduced
-        '🍋': { mult: 0.3, tier: 'common' }   // Loss but get something back
+        '🍊': { mult: 1.1, tier: 'rare' },
+        '🍉': { mult: 0.9, tier: 'rare' },
+        '🍒': { mult: 0.4, tier: 'common' },  // Loss but reduced
+        '🍋': { mult: 0.25, tier: 'common' }   // Loss but get something back
     };
 
     const payout = payouts[matched] || payouts['🍋'];
