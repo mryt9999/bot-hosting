@@ -295,10 +295,10 @@ async function handleRPSChoice(interaction) {
         (challengerChoice === 'scissors' && opponentChoice === 'paper')
     ) {
         winnerId = challengerId;
-        resultText = `🎉 <@${challengerId}> wins ${(betAmount * 2).toLocaleString()} points!`;
+        resultText = `# 🎉 <@${challengerId}> wins ${(betAmount * 2).toLocaleString()} points!`;
     } else {
         winnerId = opponentId;
-        resultText = `🎉 <@${opponentId}> wins ${(betAmount * 2).toLocaleString()} points!`;
+        resultText = `# 🎉 <@${opponentId}> wins ${(betAmount * 2).toLocaleString()} points!`;
     }
 
     if (winnerId) {

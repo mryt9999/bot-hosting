@@ -2,7 +2,6 @@ require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
 const mongoose = require('mongoose');
-const { initializeArcaneRoleChecker } = require('./schedulers/arcaneRoleChecker');
 
 const { DISCORD_TOKEN: token, MONGODB_SRV: database } = process.env;
 
