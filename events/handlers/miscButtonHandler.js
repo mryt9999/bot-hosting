@@ -237,13 +237,20 @@ async function handleTriviaButtons(interaction) {
             disabledRow.addComponents(disabledButton);
         }
 
-        await interaction.message.edit({ components: [disabledRow] }).catch(() => { });
+        await interaction.update({ components: [disabledRow] }).catch(() => { });
 
-        return interaction.reply({
+        return interaction.followUp({
             content: 'This trivia question has expired!',
             flags: [MessageFlags.Ephemeral]
         });
     }
+
+    // Defer the update immediately to acknowledge the interaction
+    await interaction.deferUpdate().catch(async (error) => {
+        console.error('Failed to defer trivia button interaction:', error);
+        // If defer fails, the interaction token is already expired
+        return;
+    });
 
     // Disable buttons after answering
     const disabledRow = new ActionRowBuilder();
@@ -253,7 +260,7 @@ async function handleTriviaButtons(interaction) {
         disabledRow.addComponents(disabledButton);
     }
 
-    await interaction.message.edit({ components: [disabledRow] });
+    await interaction.editReply({ components: [disabledRow] });
 
     const isCorrect = answerId === triviaData.correctAnswer;
 
@@ -267,7 +274,7 @@ async function handleTriviaButtons(interaction) {
         );
 
         if (updateResult.success) {
-            await interaction.reply({
+            await interaction.followUp({
                 embeds: [
                     new EmbedBuilder()
                         .setTitle('✅ Correct Answer!')
@@ -276,7 +283,7 @@ async function handleTriviaButtons(interaction) {
                 ]
             });
         } else {
-            await interaction.reply({
+            await interaction.followUp({
                 embeds: [
                     new EmbedBuilder()
                         .setTitle('✅ Correct Answer!')
@@ -286,7 +293,7 @@ async function handleTriviaButtons(interaction) {
             });
         }
     } else {
-        await interaction.reply({
+        await interaction.followUp({
             embeds: [
                 new EmbedBuilder()
                     .setTitle('❌ Incorrect Answer')

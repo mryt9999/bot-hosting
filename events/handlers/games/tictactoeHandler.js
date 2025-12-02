@@ -102,39 +102,41 @@ async function handleTTTChallenge(interaction) {
     const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
     const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
 
-    if (challengerProfile.balance < betAmount) {
-        await interaction.update({
-            content: `❌ Challenge cancelled. <@${challengerId}> no longer has enough points.`,
-            embeds: [],
-            components: []
-        });
-        return;
-    }
+    if (betAmount > 0) {
+        if (challengerProfile.balance < betAmount) {
+            await interaction.update({
+                content: `❌ Challenge cancelled. <@${challengerId}> no longer has enough points.`,
+                embeds: [],
+                components: []
+            });
+            return;
+        }
 
-    if (opponentProfile.balance < betAmount) {
-        await interaction.update({
-            content: `❌ Challenge cancelled. <@${opponentId}> doesn't have enough points.`,
-            embeds: [],
-            components: []
-        });
-        return;
-    }
+        if (opponentProfile.balance < betAmount) {
+            await interaction.update({
+                content: `❌ Challenge cancelled. <@${opponentId}> doesn't have enough points.`,
+                embeds: [],
+                components: []
+            });
+            return;
+        }
 
-    // Deduct bets
-    challengerProfile.balance -= betAmount;
-    opponentProfile.balance -= betAmount;
-    await challengerProfile.save();
-    await opponentProfile.save();
+        // Deduct bets
+        challengerProfile.balance -= betAmount;
+        opponentProfile.balance -= betAmount;
+        await challengerProfile.save();
+        await opponentProfile.save();
 
-    // Trigger balance change events
-    try {
-        const balanceChangeEvent = require('../../balanceChange');
-        const challengerMember = await interaction.guild.members.fetch(challengerId);
-        const opponentMember = await interaction.guild.members.fetch(opponentId);
-        balanceChangeEvent.execute(challengerMember);
-        balanceChangeEvent.execute(opponentMember);
-    } catch (err) {
-        console.error('Failed to trigger balance change event:', err);
+        // Trigger balance change events
+        try {
+            const balanceChangeEvent = require('../../balanceChange');
+            const challengerMember = await interaction.guild.members.fetch(challengerId);
+            const opponentMember = await interaction.guild.members.fetch(opponentId);
+            balanceChangeEvent.execute(challengerMember);
+            balanceChangeEvent.execute(opponentMember);
+        } catch (err) {
+            console.error('Failed to trigger balance change event:', err);
+        }
     }
 
     // Initialize game

@@ -14,7 +14,7 @@ module.exports = {
             option.setName('bet')
                 .setDescription('Amount of points to bet')
                 .setRequired(true)
-                .setMinValue(1)),
+                .setMinValue(0)),
     async execute(interaction, profileData) {
         try {
             const opponent = interaction.options.getUser('opponent');

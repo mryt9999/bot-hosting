@@ -89,12 +89,12 @@ const triviaQuestions = [
             const options = [
                 {
                     id: 'A',
-                    text: `${gen1Amount}x ${gen1.name}`,
+                    text: `${gen1Amount}x ${gen1}`,
                     value: gen1TotalEfficency
                 },
                 {
                     id: 'B',
-                    text: `${gen2Amount}x ${gen2.name}`,
+                    text: `${gen2Amount}x ${gen2}`,
                     value: gen2TotalEfficency
                 }
             ];
@@ -143,12 +143,12 @@ const triviaQuestions = [
             const options = [
                 {
                     id: 'A',
-                    text: `${gen1Amount}x ${gen1.name}`,
+                    text: `${gen1Amount}x ${gen1}`,
                     value: gen1TotalEfficencyPerCost
                 },
                 {
                     id: 'B',
-                    text: `${gen2Amount}x ${gen2.name}`,
+                    text: `${gen2Amount}x ${gen2}`,
                     value: gen2TotalEfficencyPerCost
                 }
             ];
