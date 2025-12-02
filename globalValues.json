@@ -7,6 +7,9 @@
     "minPointsPerWithdraw": 10000,
     "maxGensPerWithdraw": 50,
     "pointsPerGodlyGen": 1,
+    "messagesNeededForTrivia": 30,
+    "triviaMinCooldownInMinutes": 120,
+    "triviaMaxCooldownInMinutes": 180,
     "pendingTransfersRoleId": "1439387979067162654",
     "genSupplierRoleId": "1438873118922903663",
     "gensAfterGodly": [

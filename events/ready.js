@@ -14,7 +14,9 @@ const {
     createNumberLottery,
     createRaffleLottery,
     createAnimalLottery,
-    archiveLottery
+    archiveLottery,
+    endAnimalLottery,
+    endRaffleLottery
 } = require('../utils/lotteryManager');
 
 const LOTTERY_ARCHIVAL_DELAY = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
@@ -72,6 +74,13 @@ module.exports = {
                 if (raffle.endsAt > Date.now()) {
                     scheduleRaffleEnd(raffle._id, raffle.endsAt, client);
                     console.log(`[Lottery] Rescheduled raffle lottery ${raffle._id}`);
+                } else {
+                    // Lottery should have ended while bot was down
+                    console.log(`[Lottery] Ending missed raffle lottery ${raffle._id}`);
+                    const guild = client.guilds.cache.get(raffle.serverID);
+                    if (guild) {
+                        await endRaffleLottery(raffle, client, guild);
+                    }
                 }
             }
 
@@ -84,6 +93,13 @@ module.exports = {
                 if (race.endsAt > Date.now()) {
                     scheduleAnimalRaceEnd(race._id, race.endsAt, client);
                     console.log(`[Lottery] Rescheduled animal race lottery ${race._id}`);
+                } else {
+                    // Lottery should have ended while bot was down
+                    console.log(`[Lottery] Ending missed animal race lottery ${race._id}`);
+                    const guild = client.guilds.cache.get(race.serverID);
+                    if (guild) {
+                        await endAnimalLottery(race, client, guild);
+                    }
                 }
             }
         } catch (error) {

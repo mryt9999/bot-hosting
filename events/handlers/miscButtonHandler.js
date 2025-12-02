@@ -1,7 +1,8 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, MessageFlags } = require('discord.js');
 const { createMainHelpEmbed, createCommandSelectMenu } = require('../../commands/help');
-const { handleTransferCancel } = require('../../commands/transfer');
+const { handleCancel } = require('../../commands/transfer');
 const { processLoanAcceptance } = require('../../commands/loan');
+const { updateBalance } = require('../../utils/dbUtils');
 
 /**
  * Handles help navigation buttons
@@ -26,7 +27,7 @@ async function handleHelpButtons(interaction) {
 async function handleTransferButtons(interaction) {
     if (interaction.customId.startsWith('transfer_cancel_')) {
         const userId = interaction.customId.replace('transfer_cancel_', '');
-        await handleTransferCancel(interaction, userId);
+        await handleCancel(interaction, userId);
         return true;
     }
 
@@ -196,10 +197,115 @@ async function handleCloseBackButtons(interaction) {
     return false;
 }
 
+async function handleTriviaButtons(interaction) {
+    if (!interaction.customId.startsWith('trivia_answer_')) {
+        return false;
+    }
+
+    const parts = interaction.customId.split('_');
+    const userId = parts[2];
+    const answerId = parts[3];
+
+    // Check if this is the correct user
+    if (interaction.user.id !== userId) {
+        return interaction.reply({
+            content: 'This trivia question is not for you!',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
+
+    const triviaCache = global.activeTriviaQuestions || new Map();
+    const triviaKey = `${userId}_${interaction.message.id}`;
+    const triviaData = triviaCache.get(triviaKey);
+
+    if (!triviaData) {
+        return interaction.reply({
+            content: 'This trivia question has expired or is no longer valid.',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
+
+    // Check if expired
+    if (Date.now() > triviaData.expiresAt) {
+        triviaCache.delete(triviaKey);
+
+        // Disable buttons instead of removing them
+        const disabledRow = new ActionRowBuilder();
+        for (const component of interaction.message.components[0].components) {
+            const disabledButton = ButtonBuilder.from(component)
+                .setDisabled(true);
+            disabledRow.addComponents(disabledButton);
+        }
+
+        await interaction.message.edit({ components: [disabledRow] }).catch(() => { });
+
+        return interaction.reply({
+            content: 'This trivia question has expired!',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
+
+    // Disable buttons after answering
+    const disabledRow = new ActionRowBuilder();
+    for (const component of interaction.message.components[0].components) {
+        const disabledButton = ButtonBuilder.from(component)
+            .setDisabled(true);
+        disabledRow.addComponents(disabledButton);
+    }
+
+    await interaction.message.edit({ components: [disabledRow] });
+
+    const isCorrect = answerId === triviaData.correctAnswer;
+
+    if (isCorrect) {
+        // Award points
+        const updateResult = await updateBalance(
+            interaction.user.id,
+            triviaData.rewardPoints,
+            { client: interaction.client },
+            { serverId: triviaData.guildId }
+        );
+
+        if (updateResult.success) {
+            await interaction.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('✅ Correct Answer!')
+                        .setDescription(`You earned **${triviaData.rewardPoints}** points!\n\n${triviaData.explanation}`)
+                        .setColor(0x00FF00)
+                ]
+            });
+        } else {
+            await interaction.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('✅ Correct Answer!')
+                        .setDescription(`You got it right, but there was an error awarding points.\n\n${triviaData.explanation}`)
+                        .setColor(0xFFA500)
+                ]
+            });
+        }
+    } else {
+        await interaction.reply({
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle('❌ Incorrect Answer')
+                    .setDescription(`The correct answer was **${triviaData.correctAnswer}**.\n\n${triviaData.explanation}`)
+                    .setColor(0xFF0000)
+            ]
+        });
+    }
+
+    // Clean up trivia data
+    triviaCache.delete(triviaKey);
+    return true;
+}
+
 module.exports = {
     handleHelpButtons,
     handleTransferButtons,
     handleLoanButtons,
     handleCommandMenuButtons,
-    handleCloseBackButtons
+    handleCloseBackButtons,
+    handleTriviaButtons
 };

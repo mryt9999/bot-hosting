@@ -8,13 +8,18 @@ const {
     handleTransferButtons,
     handleLoanButtons,
     handleCommandMenuButtons,
-    handleCloseBackButtons
+    handleCloseBackButtons,
+    handleTriviaButtons
 } = require('./miscButtonHandler');
 
 /**
  * Routes button interactions to appropriate handlers
  */
 async function handleButtonInteraction(interaction, profileData, replyEphemeral) {
+    // Trivia buttons (check first for priority)
+    if (await handleTriviaButtons(interaction)) {
+        return;
+    }
     // RPS game buttons
     if (interaction.customId.startsWith('rps_accept_') || interaction.customId.startsWith('rps_decline_')) {
         return await handleRPSChallenge(interaction);

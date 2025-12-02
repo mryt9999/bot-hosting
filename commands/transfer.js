@@ -352,7 +352,8 @@ module.exports = {
     // Export session map and handlers for interactionCreate.js
     transferSessions,
     handleTransferButton,
-    handleTransferModal
+    handleTransferModal,
+    handleCancel
 };
 
 async function updateTransferList(interaction, sessionId, profileData, isInitial = false) {

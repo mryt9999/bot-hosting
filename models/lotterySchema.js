@@ -73,7 +73,7 @@ const lotterySchema = new mongoose.Schema({
     archived: {
         type: Boolean,
         default: false
-    }
+    },
 });
 
 module.exports = mongoose.model('Lottery', lotterySchema);
