@@ -177,10 +177,10 @@ const triviaQuestions = [
                 { name: 'Blossom Crate', level: 40 }
             ];
             const correctCrate = crates[Math.floor(Math.random() * crates.length)];
-            const wrongOptions = crates.filter(c => c.name !== correctCrate.name).map(c => c.name);
+            const wrongOptions = crates.filter(c => c.level !== correctCrate.level).map(c => c.level.toString());
 
             const { options, correctAnswer } = createMultipleChoiceOptions(
-                correctCrate.name,
+                correctCrate.level.toString(),
                 wrongOptions,
                 3
             );
