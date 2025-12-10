@@ -40,8 +40,8 @@ function createMainHelpEmbed(interaction) {
             const hasSubcommands = cmd.data.options && cmd.data.options.length > 0 &&
                 cmd.data.options.some(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
 
-            // Special handling for transfer and loan commands - list subcommands individually
-            if ((cmd.data.name === 'transfer' || cmd.data.name === 'loan') && hasSubcommands) {
+            // Special handling for transfer, loan, job, and task commands - list subcommands individually
+            if ((cmd.data.name === 'transfer' || cmd.data.name === 'loan' || cmd.data.name === 'job' || cmd.data.name === 'task') && hasSubcommands) {
                 const subcommands = cmd.data.options.filter(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
                 subcommands.forEach(subCmd => {
                     commandList.push(`\`/${cmd.data.name} ${subCmd.name}\` - ${subCmd.description}`);
