@@ -33,18 +33,30 @@ function createMainHelpEmbed(interaction) {
             continue;
         }
 
-        const commandList = commands.map(cmd => {
-            const hasSubcommands = cmd.data.options?.some(opt => opt.type === 1);
-            if (hasSubcommands) {
-                const subCount = cmd.data.options.filter(opt => opt.type === 1).length;
-                return `\`/${cmd.data.name}\` - ${cmd.data.description} (${subCount} subcommands)`;
+        const commandList = [];
+
+        commands.forEach(cmd => {
+            // Check if command has subcommands by checking the constructor name
+            const hasSubcommands = cmd.data.options && cmd.data.options.length > 0 &&
+                cmd.data.options.some(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
+
+            // Special handling for transfer and loan commands - list subcommands individually
+            if ((cmd.data.name === 'transfer' || cmd.data.name === 'loan') && hasSubcommands) {
+                const subcommands = cmd.data.options.filter(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
+                subcommands.forEach(subCmd => {
+                    commandList.push(`\`/${cmd.data.name} ${subCmd.name}\` - ${subCmd.description}`);
+                });
+            } else if (hasSubcommands) {
+                const subCount = cmd.data.options.filter(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder').length;
+                commandList.push(`\`/${cmd.data.name}\` - ${cmd.data.description} (${subCount} subcommands)`);
+            } else {
+                commandList.push(`\`/${cmd.data.name}\` - ${cmd.data.description}`);
             }
-            return `\`/${cmd.data.name}\` - ${cmd.data.description}`;
-        }).join('\n');
+        });
 
         embed.addFields({
             name: `${getCategoryEmoji(category)} ${category}`,
-            value: commandList || 'No commands',
+            value: commandList.join('\n') || 'No commands',
             inline: false
         });
     }
@@ -53,7 +65,8 @@ function createMainHelpEmbed(interaction) {
 }
 
 function createCommandDetailEmbed(command, interaction) {
-    const hasSubcommands = command.data.options?.some(opt => opt.type === 1);
+    const hasSubcommands = command.data.options && command.data.options.length > 0 &&
+        command.data.options.some(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
 
     const embed = new EmbedBuilder()
         .setTitle(`📖 \`${command.data.name}\` Command`)
@@ -64,7 +77,7 @@ function createCommandDetailEmbed(command, interaction) {
 
     if (hasSubcommands) {
         // List all subcommands with their options
-        const subcommands = command.data.options.filter(opt => opt.type === 1);
+        const subcommands = command.data.options.filter(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
 
         for (const subCmd of subcommands) {
             let fieldValue = `**Description:** ${subCmd.description}\n**Usage:** \`/${command.data.name} ${subCmd.name}\``;
@@ -96,7 +109,7 @@ function createCommandDetailEmbed(command, interaction) {
         let usage = `\`/${command.data.name}\``;
 
         if (command.data.options && command.data.options.length > 0) {
-            const regularOptions = command.data.options.filter(opt => opt.type !== 1);
+            const regularOptions = command.data.options.filter(opt => opt.constructor.name !== 'SlashCommandSubcommandBuilder');
 
             if (regularOptions.length > 0) {
                 const optionsList = regularOptions.map(opt => {
@@ -133,17 +146,23 @@ function createCommandSelectMenu(interaction) {
     const selectOptions = [];
 
     commands.forEach(cmd => {
+        // Skip help command entirely
+        if (cmd.data.name === 'help') {
+            return;
+        }
+
         // Skip admin commands if user is not admin
         if (cmd.data.default_member_permissions && !interaction.memberPermissions?.has(cmd.data.default_member_permissions)) {
             return;
         }
 
         const category = getCategoryForCommand(cmd.data.name);
-        const hasSubcommands = cmd.data.options?.some(opt => opt.type === 1);
+        const hasSubcommands = cmd.data.options && cmd.data.options.length > 0 &&
+            cmd.data.options.some(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder');
 
         let description = cmd.data.description.substring(0, 100);
         if (hasSubcommands) {
-            const subCount = cmd.data.options.filter(opt => opt.type === 1).length;
+            const subCount = cmd.data.options.filter(opt => opt.constructor.name === 'SlashCommandSubcommandBuilder').length;
             description = `${description} (${subCount} subcommands)`;
         }
 
@@ -179,20 +198,23 @@ function createBackButton() {
 function categorizeCommands(commands, interaction) {
     const categories = {
         'Points & Daily': [],
+        'Gambling': [],
         'Games': [],
         'Stats & Info': [],
         'Jobs & Tasks': [],
         'Transfers': [],
         'Loans': [],
-        'Admin': [],
-        'Settings': []
+        'Admin': []
     };
 
     const categoryMapping = {
         'daily': 'Points & Daily',
         'balance': 'Stats & Info',
         'donate': 'Points & Daily',
-        'gamble': 'Games',
+        'gamble': 'Gambling',
+        'slots': 'Gambling',
+        'dice': 'Gambling',
+        'lottery': 'Gambling',
         'leaderboard': 'Stats & Info',
         'job': 'Jobs & Tasks',
         'task': 'Jobs & Tasks',
@@ -200,17 +222,25 @@ function categorizeCommands(commands, interaction) {
         'loan': 'Loans',
         'viewactiveloans': 'Loans',
         'admin': 'Admin',
-        'help': 'Settings',
-        'commandmenu': 'Settings'
+        'commandmenu': 'Admin',
+        'rps': 'Games',
+        'tictactoe': 'Games',
+        'connect4': 'Games',
+        'trivia': 'Games'
     };
 
     commands.forEach(cmd => {
+        // Skip help command entirely
+        if (cmd.data.name === 'help') {
+            return;
+        }
+
         // Skip admin commands if user is not admin
         if (cmd.data.default_member_permissions && !interaction.memberPermissions?.has(cmd.data.default_member_permissions)) {
             return;
         }
 
-        const category = categoryMapping[cmd.data.name] || 'Settings';
+        const category = categoryMapping[cmd.data.name] || 'Stats & Info';
         categories[category].push(cmd);
     });
 
@@ -222,7 +252,10 @@ function getCategoryForCommand(commandName) {
         'daily': 'Points & Daily',
         'balance': 'Stats & Info',
         'donate': 'Points & Daily',
-        'gamble': 'Games',
+        'gamble': 'Gambling',
+        'slots': 'Gambling',
+        'dice': 'Gambling',
+        'lottery': 'Gambling',
         'leaderboard': 'Stats & Info',
         'job': 'Jobs & Tasks',
         'task': 'Jobs & Tasks',
@@ -230,23 +263,26 @@ function getCategoryForCommand(commandName) {
         'loan': 'Loans',
         'viewactiveloans': 'Loans',
         'admin': 'Admin',
-        'help': 'Settings',
-        'commandmenu': 'Settings'
+        'commandmenu': 'Admin',
+        'rps': 'Games',
+        'tictactoe': 'Games',
+        'connect4': 'Games',
+        'trivia': 'Games'
     };
 
-    return categoryMapping[commandName] || 'Settings';
+    return categoryMapping[commandName] || 'Stats & Info';
 }
 
 function getCategoryEmoji(category) {
     const emojiMap = {
         'Points & Daily': '🪙',
-        'Games': '🎲',
+        'Gambling': '🎰',
+        'Games': '🎮',
         'Stats & Info': '📊',
         'Jobs & Tasks': '💼',
         'Transfers': '💸',
         'Loans': '🏦',
-        'Admin': '⚙️',
-        'Settings': '⚙️'
+        'Admin': '⚙️'
     };
     return emojiMap[category] || '📋';
 }

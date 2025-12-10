@@ -186,10 +186,10 @@ const triviaQuestions = [
             );
 
             return {
-                question: `What level is required for ${correctCrate.name}?`,
+                question: `What rebirth is required for ${correctCrate.name}?`,
                 options: options,
                 correctAnswer: correctAnswer,
-                explanation: `Answer: ${correctCrate.name} requires level ${correctCrate.level}.`,
+                explanation: `Answer: ${correctCrate.name} requires rebirth ${correctCrate.level}.`,
                 category: 'Game Knowledge',
                 difficulty: 'Medium',
                 rewardPoints: MediumRewardPoints
