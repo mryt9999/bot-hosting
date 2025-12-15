@@ -164,16 +164,16 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
     const matched = symbols.find((s, i) => symbols.indexOf(s) !== i);
 
     const payouts = {
-        '💰': { mult: 4, tier: 'ultra' },    // ⬇️ 
-        '👑': { mult: 3, tier: 'ultra' },    // ⬇️ 
-        '💎': { mult: 2, tier: 'super' },  // ⬇️ 
-        '7️⃣': { mult: 1.8, tier: 'super' },  // ⬇️ 
-        '⭐': { mult: 1.5, tier: 'super' },    // ⬇️ 
-        '🍇': { mult: 1.2, tier: 'rare' },   // ⬇️ 
-        '🍊': { mult: 1, tier: 'rare' },   // ⬇️ 
-        '🍉': { mult: 0.7, tier: 'rare' },     // ⬇️ 
-        '🍒': { mult: 0.5, tier: 'common' },// ⬇️ 
-        '🍋': { mult: 0.3, tier: 'common' }  // ⬇️ 
+        '💰': { mult: 15, tier: 'ultra' },    // ⬇️ 
+        '👑': { mult: 7, tier: 'ultra' },    // ⬇️ 
+        '💎': { mult: 5, tier: 'super' },  // ⬇️ 
+        '7️⃣': { mult: 3, tier: 'super' },  // ⬇️ 
+        '⭐': { mult: 2.5, tier: 'super' },    // ⬇️ 
+        '🍇': { mult: 1.8, tier: 'rare' },   // ⬇️ 
+        '🍊': { mult: 1.5, tier: 'rare' },   // ⬇️ 
+        '🍉': { mult: 1.2, tier: 'rare' },     // ⬇️ 
+        '🍒': { mult: 1, tier: 'common' },// ⬇️ 
+        '🍋': { mult: 0.5, tier: 'common' }  // ⬇️ 
     };
 
     const payout = payouts[matched] || payouts['🍋'];
@@ -181,7 +181,7 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
 
     return {
         multiplier: payout.mult,
-        message: `✨ **DOUBLE ${matched}!** You ${payout.mult >= 1 ? 'won' : 'get back'} ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
+        message: `✨ **DOUBLE ${matched}!** You ${payout.mult > 1 ? 'won' : 'get back'} ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
         color: colors[payout.tier]
     };
 }

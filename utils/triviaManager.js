@@ -102,11 +102,24 @@ const triviaQuestions = [
             // Determine correct answer
             const correctAnswer = gen1TotalEfficency > gen2TotalEfficency ? 'A' : 'B';
 
+            // Build explanation as a ratio (how many times more cash the correct option produces)
+            const higherValue = Math.max(gen1TotalEfficency, gen2TotalEfficency);
+            const lowerValue = Math.min(gen1TotalEfficency, gen2TotalEfficency);
+            const ratio = lowerValue > 0 ? (higherValue / lowerValue) : Infinity;
+            let ratioDisplay;
+            if (!isFinite(ratio)) {
+                ratioDisplay = 'an infinite amount';
+            } else if (Math.abs(ratio - Math.round(ratio)) < 1e-9) {
+                ratioDisplay = `${Math.round(ratio)}x`;
+            } else {
+                ratioDisplay = `${ratio.toFixed(2)}x`;
+            }
+
             return {
                 question: 'Which produces more cash?',
                 options: options,
                 correctAnswer: correctAnswer,
-                explanation: `Option ${correctAnswer} produces ${Math.max(gen1TotalEfficency, gen2TotalEfficency).toLocaleString()} cash vs ${Math.min(gen1TotalEfficency, gen2TotalEfficency).toLocaleString()} cash`,
+                explanation: `Option ${correctAnswer} produces ${ratioDisplay} more cash than option ${correctAnswer === 'A' ? 'B' : 'A'}.`,
                 category: 'Game Knowledge',
                 difficulty: 'Hard',
                 rewardPoints: HardRewardPoints
@@ -154,11 +167,25 @@ const triviaQuestions = [
             ];
             // Determine correct answer
             const correctAnswer = gen1TotalEfficencyPerCost > gen2TotalEfficencyPerCost ? 'A' : 'B';
+
+            // Build explanation as a ratio (how many times more cash per point the correct option produces)
+            const higherValue = Math.max(gen1TotalEfficencyPerCost, gen2TotalEfficencyPerCost);
+            const lowerValue = Math.min(gen1TotalEfficencyPerCost, gen2TotalEfficencyPerCost);
+            const ratio = lowerValue > 0 ? (higherValue / lowerValue) : Infinity;
+            let ratioDisplay;
+            if (!isFinite(ratio)) {
+                ratioDisplay = 'an infinite amount';
+            } else if (Math.abs(ratio - Math.round(ratio)) < 1e-9) {
+                ratioDisplay = `${Math.round(ratio)}x`;
+            } else {
+                ratioDisplay = `${ratio.toFixed(2)}x`;
+            }
+
             return {
                 question: 'Which is more cost efficient?',
                 options: options,
                 correctAnswer: correctAnswer,
-                explanation: `Option ${correctAnswer} has ${Math.max(gen1TotalEfficencyPerCost, gen2TotalEfficencyPerCost).toFixed(6)} cash per point vs ${Math.min(gen1TotalEfficencyPerCost, gen2TotalEfficencyPerCost).toFixed(6)} cash per point`,
+                explanation: `Option ${correctAnswer} is ${ratioDisplay} more cost efficent than option ${correctAnswer === 'A' ? 'B' : 'A'}.`,
                 category: 'Game Knowledge',
                 difficulty: 'Hard',
                 rewardPoints: HardRewardPoints
@@ -599,6 +626,39 @@ const triviaQuestions = [
                 category: 'Game Knowledge',
                 difficulty: 'Easy',
                 rewardPoints: EasyRewardPoints
+            };
+        }
+    },
+    {
+        triviaReturner: function () {
+            //Where is the lobby located?
+            const correctAnswer = 'Under Map';
+            const wrongOptions = [
+                'Spawn',
+                'Zone',
+                'Height Limit',
+                'Above Map',
+                'Above Spawn',
+                'Edge of Map',
+                'Above Height Limit',
+                'In the ground',
+                'In the sky',
+            ];
+
+            const { options, correctAnswer: correctId } = createMultipleChoiceOptions(
+                correctAnswer,
+                wrongOptions,
+                4
+            );
+
+            return {
+                question: 'Where is the lobby located?',
+                options: options,
+                correctAnswer: correctId,
+                explanation: `Answer: The lobby is located ${correctAnswer}.`,
+                category: 'Game Knowledge',
+                difficulty: 'Medium',
+                rewardPoints: MediumRewardPoints
             };
         }
     },

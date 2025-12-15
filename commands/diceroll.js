@@ -40,13 +40,13 @@ module.exports = {
                 winMultiplier = 2;
                 outcome = `🍀 **LUCKY 7!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (2x)`;
                 color = 0x2ECC71;
-            } else if (total >= 9) {
-                // High roll (9-12) = break even (16.67% chance)
+            } else if (total >= 8) {
+                // High roll (8-12) = break even (33.33% chance)
                 winMultiplier = 1;
                 outcome = `😐 High roll (${total}). You rolled ${dice1} and ${dice2}.\nYou broke even!`;
                 color = 0xF39C12;
             } else {
-                // Low roll (2-8, excluding 7) = lose (50% chance)
+                // Low roll (2-6, excluding 7) = lose (33.33% chance)
                 outcome = `💔 Low roll (${total}). You rolled ${dice1} and ${dice2}.\nYou lost ${betAmount.toLocaleString()} points.`;
             }
 

@@ -16,7 +16,7 @@ const RAFFLE_LOTTERY_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const RAFFLE_LOTTERY_COOLDOWN = 8 * 60 * 60 * 1000; // 8 hours
 
 const ANIMAL_LOTTERY_COST = 500;
-const ANIMAL_LOTTERY_STARTING_POOL = 5000;
+const ANIMAL_LOTTERY_STARTING_POOL = 15000;
 const ANIMAL_LOTTERY_DURATION = 48 * 60 * 60 * 1000; // 48 hours
 const ANIMAL_LOTTERY_COOLDOWN = 32 * 60 * 60 * 1000; // 32 hours
 const ANIMAL_LOTTERY_ANIMALS = ['🐎', '🐢', '🐇', '🦘', '🦎', '🐶', '🐱', '🦅', '🦁'];

@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, Butto
 const profileModel = require('../models/profileSchema');
 const loanModel = require('../models/loanSchema');
 const { transferPoints } = require('../utils/dbUtils');
+const { safeDefer, safeReply } = require('../utils/interactionHelper'); // added import
 
 // Helper function to send loan logs to the designated channel
 async function sendLoanLog(client, guildId, embed) {
@@ -477,197 +478,298 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
 // ...existing code for handleRepay, handleList, handlePending...
 
 async function handleRepay(interaction, profileData) {
-    const loanId = interaction.options.getString('loan_id');
-    const repayAmount = interaction.options.getInteger('amount');
-    const userId = interaction.user.id;
-
-    // Find the loan
-    let loan;
     try {
-        loan = await loanModel.findById(loanId);
-    } catch (_error) {
-        return await interaction.reply({
-            content: 'Invalid loan ID. Please check the ID and try again.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
+        const loanId = interaction.options.getString('loan_id');
+        const repayAmount = interaction.options.getInteger('amount');
+        const userId = interaction.user.id;
 
-    if (!loan) {
-        return await interaction.reply({
-            content: 'Loan not found.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Verify the user is the borrower
-    if (loan.borrowerId !== userId) {
-        return await interaction.reply({
-            content: 'You are not the borrower of this loan.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Check if loan is active or overdue
-    if (loan.status !== 'active' && loan.status !== 'overdue') {
-        return await interaction.reply({
-            content: `This loan is ${loan.status} and cannot be repaid.`,
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Calculate remaining amount
-    const remainingAmount = loan.paybackAmount - loan.amountPaid;
-    const amountToRepay = repayAmount || remainingAmount;
-
-    if (amountToRepay > remainingAmount) {
-        return await interaction.reply({
-            content: `You only need to pay ${remainingAmount.toLocaleString()} points. Cannot overpay.`,
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Ensure borrower profile exists
-    if (!profileData) {
-        profileData = await profileModel.findOne({ userId: userId });
-        if (!profileData) {
-            profileData = await profileModel.create({
-                userId: userId,
-                serverID: interaction.guild?.id ?? null
-            });
-        }
-    }
-
-    const borrowerBalance = profileData.balance;
-
-    // Check if borrower has enough balance - don't allow negative
-    if (borrowerBalance < amountToRepay) {
-        return await interaction.reply({
-            content: `Insufficient funds. You have ${borrowerBalance.toLocaleString()} points but need ${amountToRepay.toLocaleString()} points to make this payment. Your future earnings will automatically go toward loan repayment.`,
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Transfer points
-    const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay, { interaction });
-
-    if (!transferResult.success) {
-        return await interaction.reply({
-            content: 'Failed to process the repayment. Please try again later.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-
-    // Update loan
-    const newAmountPaid = loan.amountPaid + amountToRepay;
-    const isFullyPaid = newAmountPaid >= loan.paybackAmount;
-
-    await loanModel.findByIdAndUpdate(loanId, {
-        amountPaid: newAmountPaid,
-        status: isFullyPaid ? 'paid' : 'active',
-        ...(isFullyPaid && { paidAt: new Date() })
-    });
-
-    // Log to loan-logs channel
-    const logEmbed = new EmbedBuilder()
-        .setTitle(isFullyPaid ? '✅ Loan Fully Repaid (Manual)' : '💵 Partial Repayment Made')
-        .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
-        .addFields(
-            { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
-            { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
-            { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
-            { name: 'Payment Amount', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
-            { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}`, inline: true },
-            { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
-            { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Partially Paid', inline: false }
-        )
-        .setFooter({ text: 'Repayment made at' })
-        .setTimestamp();
-
-    await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
-
-    // Balance change events are already fired by transferPoints
-    // Create confirmation embed
-    const embed = new EmbedBuilder()
-        .setTitle(isFullyPaid ? '✅ Loan Fully Repaid' : '💵 Partial Payment Made')
-        .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
-        .setDescription(isFullyPaid
-            ? `You have fully repaid your loan to <@${loan.lenderId}>!`
-            : `You have made a payment on your loan to <@${loan.lenderId}>.`)
-        .addFields(
-            { name: 'Amount Paid', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
-            { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} points`, inline: true },
-            { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true }
-        )
-        .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
-        .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-
-    // Notify the lender
-    if (isFullyPaid) {
+        // Find the loan
+        let loan;
         try {
-            const lender = await interaction.client.users.fetch(loan.lenderId);
-            const lenderEmbed = new EmbedBuilder()
-                .setTitle('✅ Loan Fully Repaid')
-                .setColor(0x2ECC71)
-                .setDescription(`<@${loan.borrowerId}> has fully repaid their loan!`)
-                .addFields(
-                    { name: 'Amount Received', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: false },
-                    { name: 'Profit', value: `🪙 ${(loan.paybackAmount - loan.loanAmount).toLocaleString()} points`, inline: true }
-                )
-                .setTimestamp();
+            loan = await loanModel.findById(loanId);
+        } catch (_error) {
+            return await safeReply(interaction, { content: 'Invalid loan ID. Please check the ID and try again.', flags: MessageFlags.Ephemeral });
+        }
 
-            await lender.send({ embeds: [lenderEmbed] });
-        } catch (error) {
-            console.error('Failed to notify lender:', error);
+        if (!loan) {
+            return await safeReply(interaction, { content: 'Loan not found.', flags: MessageFlags.Ephemeral });
+        }
+
+        // Verify the user is the borrower
+        if (loan.borrowerId !== userId) {
+            return await safeReply(interaction, { content: 'You are not the borrower of this loan.', flags: MessageFlags.Ephemeral });
+        }
+
+        // Check status
+        if (loan.status !== 'active' && loan.status !== 'overdue') {
+            return await safeReply(interaction, { content: `This loan is ${loan.status} and cannot be repaid.`, flags: MessageFlags.Ephemeral });
+        }
+
+        // Calculate amounts
+        const remainingAmount = loan.paybackAmount - loan.amountPaid;
+        const amountToRepay = repayAmount || remainingAmount;
+
+        if (amountToRepay > remainingAmount) {
+            return await safeReply(interaction, { content: `You only need to pay ${remainingAmount.toLocaleString()} points. Cannot overpay.`, flags: MessageFlags.Ephemeral });
+        }
+
+        // Ensure borrower profile exists
+        if (!profileData) {
+            profileData = await profileModel.findOne({ userId: userId });
+            if (!profileData) {
+                profileData = await profileModel.create({
+                    userId: userId,
+                    serverID: interaction.guild?.id ?? null
+                });
+            }
+        }
+
+        const borrowerBalance = profileData.balance;
+        if (borrowerBalance < amountToRepay) {
+            return await safeReply(interaction, { content: `Insufficient funds. You have ${borrowerBalance.toLocaleString()} points but need ${amountToRepay.toLocaleString()} points to make this payment.`, flags: MessageFlags.Ephemeral });
+        }
+
+        // Defer early (decide ephemeral here)
+        await safeDefer(interaction, { ephemeral: true });
+
+        // Transfer points (long op)
+        const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay, { interaction });
+
+        if (!transferResult.success) {
+            const msg = transferResult.reason === 'insufficient_funds'
+                ? 'The transfer failed due to insufficient funds.'
+                : 'Failed to process the repayment. Please try again later.';
+            return await safeReply(interaction, { content: msg, flags: MessageFlags.Ephemeral });
+        }
+
+        // Update loan
+        const newAmountPaid = loan.amountPaid + amountToRepay;
+        const isFullyPaid = newAmountPaid >= loan.paybackAmount;
+
+        await loanModel.findByIdAndUpdate(loanId, {
+            amountPaid: newAmountPaid,
+            status: isFullyPaid ? 'paid' : 'active',
+            ...(isFullyPaid && { paidAt: new Date() })
+        });
+
+        // Log to loan channel
+        const logEmbed = new EmbedBuilder()
+            .setTitle(isFullyPaid ? '✅ Loan Fully Repaid (Manual)' : '💵 Partial Repayment Made')
+            .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
+            .addFields(
+                { name: 'Loan ID', value: `\`${loan._id}\``, inline: false },
+                { name: 'Lender', value: `<@${loan.lenderId}>`, inline: true },
+                { name: 'Borrower', value: `<@${loan.borrowerId}>`, inline: true },
+                { name: 'Payment Amount', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
+                { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}`, inline: true },
+                { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true },
+                { name: 'Status', value: isFullyPaid ? '✅ Fully Paid' : '💵 Partially Paid', inline: false }
+            )
+            .setFooter({ text: 'Repayment made at' })
+            .setTimestamp();
+
+        await sendLoanLog(interaction.client, interaction.guild.id, logEmbed);
+
+        // Confirmation embed (edited into deferred reply)
+        const confirmEmbed = new EmbedBuilder()
+            .setTitle(isFullyPaid ? '✅ Loan Fully Repaid' : '💵 Partial Payment Made')
+            .setColor(isFullyPaid ? 0x2ECC71 : 0xF39C12)
+            .setDescription(isFullyPaid ? `You have fully repaid your loan to <@${loan.lenderId}>!` : `You have made a payment on your loan to <@${loan.lenderId}>.`)
+            .addFields(
+                { name: 'Amount Paid', value: `🪙 ${amountToRepay.toLocaleString()} points`, inline: false },
+                { name: 'Total Paid', value: `🪙 ${newAmountPaid.toLocaleString()} points`, inline: true },
+                { name: 'Remaining', value: `🪙 ${(loan.paybackAmount - newAmountPaid).toLocaleString()} points`, inline: true }
+            )
+            .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
+            .setTimestamp();
+
+        await safeReply(interaction, { embeds: [confirmEmbed] });
+
+        // Notify lender if fully paid
+        if (isFullyPaid) {
+            try {
+                const lender = await interaction.client.users.fetch(loan.lenderId);
+                const lenderEmbed = new EmbedBuilder()
+                    .setTitle('✅ Loan Fully Repaid')
+                    .setColor(0x2ECC71)
+                    .setDescription(`<@${loan.borrowerId}> has fully repaid their loan!`)
+                    .addFields(
+                        { name: 'Amount Received', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: false },
+                        { name: 'Profit', value: `🪙 ${(loan.paybackAmount - loan.loanAmount).toLocaleString()} points`, inline: true }
+                    )
+                    .setTimestamp();
+
+                await lender.send({ embeds: [lenderEmbed] });
+            } catch (error) {
+                console.error('Failed to notify lender:', error);
+            }
+        }
+    } catch (err) {
+        console.error('handleRepay error:', err);
+        if (err?.code === 10062) {
+            // Interaction expired/unknown — nothing to do
+            return;
+        }
+        // Try to reply with ephemeral error (safeReply handles expired interactions)
+        try {
+            await safeReply(interaction, { content: 'An error occurred while processing your repayment.', flags: MessageFlags.Ephemeral });
+        } catch (_e) {
+            // ignore
         }
     }
 }
 
 async function handleList(interaction) {
-    const userId = interaction.user.id;
+    try {
+        const userId = interaction.user.id;
 
-    // Find all active and overdue loans where user is either lender or borrower
-    const loansAsLender = await loanModel.find({
-        lenderId: userId,
-        status: { $in: ['active', 'overdue'] }
-    });
+        // Find all active and overdue loans where user is either lender or borrower
+        const loansAsLender = await loanModel.find({
+            lenderId: userId,
+            status: { $in: ['active', 'overdue'] }
+        });
 
-    const loansAsBorrower = await loanModel.find({
-        borrowerId: userId,
-        status: { $in: ['active', 'overdue'] }
-    });
+        const loansAsBorrower = await loanModel.find({
+            borrowerId: userId,
+            status: { $in: ['active', 'overdue'] }
+        });
 
-    const embed = new EmbedBuilder()
-        .setTitle('💰 Your Active Loans')
-        .setColor(0x3498DB)
-        .setTimestamp();
+        // Helper to format a single loan entry (truncate long fields)
+        function formatLoanLine(roleLabel, loan) {
+            const dueDate = `<t:${Math.floor(loan.dueAt / 1000)}:R>`;
+            const remaining = loan.paybackAmount - loan.amountPaid;
+            const overdueTag = loan.status === 'overdue' ? ' ⚠️ **OVERDUE**' : '';
+            let line = `**ID:** \`${loan._id}\`\n**${roleLabel}:** <@${roleLabel === 'Lender' ? loan.lenderId : loan.borrowerId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}${overdueTag}`;
+            if (line.length > 800) {
+                line = line.slice(0, 797) + '...';
+            }
+            return line;
+        }
 
-    if (loansAsLender.length === 0 && loansAsBorrower.length === 0) {
-        embed.setDescription('You have no active loans.');
-    } else {
+        // Build items list with headers
+        const items = [];
+
         if (loansAsLender.length > 0) {
-            const lenderText = loansAsLender.map(loan => {
-                const dueDate = `<t:${Math.floor(loan.dueAt / 1000)}:R>`;
-                const remaining = loan.paybackAmount - loan.amountPaid;
-                const overdueTag = loan.status === 'overdue' ? ' ⚠️ **OVERDUE**' : '';
-                return `**ID:** \`${loan._id}\`\n**Borrower:** <@${loan.borrowerId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}${overdueTag}\n`;
-            }).join('\n');
-            embed.addFields({ name: '💸 Loans You Gave', value: lenderText });
+            items.push('💸 **Loans You Gave**');
+            for (const loan of loansAsLender) items.push(formatLoanLine('Borrower', loan));
         }
 
         if (loansAsBorrower.length > 0) {
-            const borrowerText = loansAsBorrower.map(loan => {
-                const dueDate = `<t:${Math.floor(loan.dueAt / 1000)}:R>`;
-                const remaining = loan.paybackAmount - loan.amountPaid;
-                const overdueTag = loan.status === 'overdue' ? ' ⚠️ **OVERDUE**' : '';
-                return `**ID:** \`${loan._id}\`\n**Lender:** <@${loan.lenderId}>\n**Remaining:** 🪙 ${remaining.toLocaleString()} / ${loan.paybackAmount.toLocaleString()}\n**Due:** ${dueDate}${overdueTag}\n`;
-            }).join('\n');
-            embed.addFields({ name: '💳 Loans You Owe', value: borrowerText });
+            items.push('💳 **Loans You Owe**');
+            for (const loan of loansAsBorrower) items.push(formatLoanLine('Lender', loan));
         }
-    }
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        // If nothing, simple reply
+        if (items.length === 0) {
+            const embed = new EmbedBuilder()
+                .setTitle('💰 Your Active Loans')
+                .setColor(0x3498DB)
+                .setDescription('You have no active loans.')
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        }
+
+        // Pagination: N items per page (header lines count too)
+        const ITEMS_PER_PAGE = 4;
+        const pages = [];
+        for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
+            const chunk = items.slice(i, i + ITEMS_PER_PAGE).join('\n\n');
+            pages.push(chunk);
+        }
+
+        let pageIndex = 0;
+        const totalPages = pages.length;
+
+        const embed = new EmbedBuilder()
+            .setTitle('💰 Your Active Loans')
+            .setColor(0x3498DB)
+            .setDescription(pages[pageIndex])
+            .setFooter({ text: `Page ${pageIndex + 1}/${totalPages}` })
+            .setTimestamp();
+
+        // If only one page, no buttons needed
+        if (totalPages === 1) {
+            await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+            return;
+        }
+
+        // Build buttons
+        const prevButton = new ButtonBuilder()
+            .setCustomId('loan_prev')
+            .setLabel('Prev')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true);
+
+        const nextButton = new ButtonBuilder()
+            .setCustomId('loan_next')
+            .setLabel('Next')
+            .setStyle(ButtonStyle.Primary);
+
+        const closeButton = new ButtonBuilder()
+            .setCustomId('loan_close')
+            .setLabel('Close')
+            .setStyle(ButtonStyle.Danger);
+
+        const row = new ActionRowBuilder().addComponents(prevButton, nextButton, closeButton);
+
+        await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+
+        // Fetch the reply and create collector
+        const message = await interaction.fetchReply();
+        const collector = message.createMessageComponentCollector({
+            time: 2 * 60 * 1000, // 2 minutes
+            filter: i => i.user.id === interaction.user.id
+        });
+
+        collector.on('collect', async i => {
+            try {
+                await i.deferUpdate();
+
+                if (i.customId === 'loan_next') {
+                    pageIndex = Math.min(pageIndex + 1, totalPages - 1);
+                } else if (i.customId === 'loan_prev') {
+                    pageIndex = Math.max(pageIndex - 1, 0);
+                } else if (i.customId === 'loan_close') {
+                    collector.stop('closed');
+                    return;
+                }
+
+                // Update button disabled states
+                prevButton.setDisabled(pageIndex === 0);
+                nextButton.setDisabled(pageIndex === totalPages - 1);
+
+                // Update embed and message
+                const updatedEmbed = EmbedBuilder.from(embed)
+                    .setDescription(pages[pageIndex])
+                    .setFooter({ text: `Page ${pageIndex + 1}/${totalPages}` });
+
+                await interaction.editReply({ embeds: [updatedEmbed], components: [row] });
+            } catch (err) {
+                console.error('Error handling loan list pagination interaction:', err);
+            }
+        });
+
+        collector.on('end', async (_, reason) => {
+            try {
+                // disable buttons when ended
+                prevButton.setDisabled(true);
+                nextButton.setDisabled(true);
+                closeButton.setDisabled(true);
+                const disabledRow = new ActionRowBuilder().addComponents(prevButton, nextButton, closeButton);
+                await interaction.editReply({ components: [disabledRow] });
+            } catch (err) {
+                console.error('Failed to disable pagination buttons after collector end:', err);
+            }
+        });
+    } catch (error) {
+        console.error('Error in /loan list:', error);
+        const replyMethod = interaction.deferred || interaction.replied ? 'editReply' : 'reply';
+        await interaction[replyMethod]({
+            content: 'An error occurred while listing loans.',
+            flags: [MessageFlags.Ephemeral]
+        });
+    }
 }
 
 async function handlePending(interaction) {

@@ -7,7 +7,7 @@
     "minPointsPerWithdraw": 10000,
     "maxGensPerWithdraw": 50,
     "pointsPerGodlyGen": 1,
-    "messagesNeededForTrivia": 30,
+    "messagesNeededForTrivia": 20,
     "triviaMinCooldownInMinutes": 60,
     "triviaMaxCooldownInMinutes": 120,
     "pendingTransfersRoleId": "1439387979067162654",
@@ -27,34 +27,34 @@
             "taskId": "1",
             "taskName": "PublicDonation",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 750
+            "pointRewardPerCompletion": 1000
         },
         {
             "taskId": "2",
             "taskName": "ServerDonation",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 1500
+            "pointRewardPerCompletion": 2000
         },
         {
             "taskId": "3",
             "taskName": "PublicGiveaway",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 750
+            "pointRewardPerCompletion": 1000
         },
         {
             "taskId": "4",
             "taskName": "ServerGiveaway",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 1250
+            "pointRewardPerCompletion": 1500
         },
         {
             "taskId": "5",
             "taskName": "TeamGrinding",
             "maxCompletionsPerWeek": 3,
-            "pointRewardPerCompletion": 500
+            "pointRewardPerCompletion": 1000
         }
     ],
-    "maxJobsPerUser": 2,
+    "maxJobsPerUser": 3,
     "paidRoleInfo": [
         {
             "roleId": "1437830285319344168",
@@ -64,6 +64,14 @@
             "privateJob": false,
             "extraWithdrawLimit": 10000,
             "levelRequirement": 30
+        },
+        {
+            "roleId": "1449937294818541742",
+            "pointReward": 2500,
+            "jobName": "Ps Provider",
+            "jobDescription": "Provides a Public Private Server.",
+            "privateJob": true,
+            "extraWithdrawLimit": 10000
         },
         {
             "roleId": "1438641566854938654",

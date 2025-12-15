@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const profileModel = require('../models/profileSchema');
+const { safeReply } = require('../utils/interactionHelper'); // added
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,7 +19,6 @@ module.exports = {
         const ephemeral = !!opts.ephemeral;
         const flags = ephemeral ? { flags: MessageFlags.Ephemeral } : {};
 
-
         //check if a target player is specified
         try {
             if (interaction.options.getUser('player')) {
@@ -30,16 +30,14 @@ module.exports = {
                 try {
                     targetProfileData = await profileModel.findOne({ userId: targetUser.id });
                 } catch (_err) {
-                    console.error('Failed to fetch target profileData:', err);
+                    console.error('Failed to fetch target profileData:', _err);
                 }
                 //return if no profile data
                 if (!targetProfileData) {
                     const msg = `${targetusername} does not have a profile yet.`;
-                    if (!interaction.replied && !interaction.deferred) {
-                        return await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
-                    } else {
-                        return await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
-                    }
+                    // use safeReply for ephemeral error
+                    await safeReply(interaction, { content: msg, flags: MessageFlags.Ephemeral });
+                    return;
                 }
                 balance = targetProfileData.balance;
                 username = targetUser.username;
@@ -55,13 +53,13 @@ module.exports = {
             avatar = interaction.user.displayAvatarURL({ dynamic: true });
         }
 
-
         const embed = new EmbedBuilder()
             .setTitle(`${username}'s Wallet`)
             .setColor(0x57F287) // green tint
             .setThumbnail(avatar)
             .addFields(
-                { name: 'Balance', value: `🪙 ${balance.toLocaleString()} points`, inline: true })
+                // hide decimals by flooring
+                { name: 'Balance', value: `🪙 ${Math.floor(balance).toLocaleString()} points`, inline: true })
             .setFooter({ text: `Requested by ${interaction.user.username}` })
             .setTimestamp();
 
@@ -82,12 +80,9 @@ module.exports = {
                 }, 30000);
             }
         } catch (_err) {
-            console.error('Failed to send balance embed:', err);
-            try {
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: 'Error showing balance.', flags: MessageFlags.Ephemeral });
-                }
-            } catch { }
+            console.error('Failed to send balance embed:', _err);
+            // Use safeReply so Unknown Interaction (10062) is handled gracefully
+            await safeReply(interaction, { content: 'Error showing balance.', flags: MessageFlags.Ephemeral }).catch(() => { });
         }
     },
 };

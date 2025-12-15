@@ -1,101 +1,74 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const { updateBalance } = require('../utils/dbUtils');
+const { safeDefer, safeReply } = require('../utils/interactionHelper');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('gamble')
-        .setDescription('gamble points with 50/50 odds')
+        .setDescription('Gamble your points with 50/50 odds')
         .addIntegerOption(option =>
             option.setName('amount')
                 .setDescription('The amount of points to gamble')
                 .setRequired(true)
                 .setMinValue(1)),
     async execute(interaction, profileData, opts = {}) {
-        // accept either opts.ephemeral (boolean) or opts.flags (MessageFlags value)
-        const ephemeral = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
-        const callerFlags = opts.flags ?? (opts.ephemeral ? MessageFlags.Ephemeral : undefined);
-        const flags = callerFlags ? { flags: callerFlags } : {};
-        const deferOpts = callerFlags ? { flags: callerFlags } : {};
+        // Resolve flags/ephemeral preferences from opts
+        const flagsValue = opts.flags;
+        const ephemeralFlag = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
+        const replyFlags = flagsValue ?? (ephemeralFlag ? MessageFlags.Ephemeral : undefined);
 
+        // Defer early for normal slash commands (modal submits should not be deferred)
         if (!opts.invokedByModal) {
-            // Normal slash command - defer as usual
-            const deferOpts = callerFlags ? { flags: callerFlags } : {};
-            await interaction.deferReply(deferOpts);
-        } else {
-            // Modal submit - just reply, don't defer (modal submit is already a response)
-            // The modal interaction is fresh, we can reply directly
-        }
-
-        // Determine amount: prefer opts.amount (from modal) otherwise use slash option
-        const amount = typeof opts.amount === 'number' ? opts.amount : interaction.options?.getInteger('amount');
-        if (!amount || isNaN(amount) || amount <= 0) {
-            if (!interaction.replied && !interaction.deferred) {
-                return await interaction.reply({ content: 'Invalid gamble amount.', ...flags });
-            } else {
-                return await interaction.followUp({ content: 'Invalid gamble amount.', ...flags });
+            const deferred = await safeDefer(interaction, { ephemeral: ephemeralFlag });
+            if (deferred === null) {
+                console.warn('Gamble: interaction expired before processing.');
+                return;
             }
         }
 
-        // ensure profileData exists
-        if (!profileData) {
-            try {
+        // Determine bet amount (modal or slash)
+        const amount = typeof opts.amount === 'number' ? opts.amount : interaction.options?.getInteger('amount');
+        if (!amount || isNaN(amount) || amount <= 0) {
+            await safeReply(interaction, { content: 'Invalid gamble amount.', flags: replyFlags });
+            return;
+        }
+
+        // Ensure profile exists
+        try {
+            if (!profileData) {
                 profileData = await profileModel.findOne({ userId: interaction.user.id });
                 if (!profileData) {
                     profileData = await profileModel.create({
                         userId: interaction.user.id,
-                        serverID: interaction.guild?.id ?? null,
+                        serverID: interaction.guild?.id ?? null
                     });
                 }
-            } catch (_err) {
-                console.error('Failed to fetch/create profileData for gamble:', err);
             }
+        } catch (err) {
+            console.error('Failed to fetch/create profileData for gamble:', err);
+            await safeReply(interaction, { content: 'An internal error occurred.', flags: MessageFlags.Ephemeral });
+            return;
         }
 
         const balance = profileData?.balance ?? 0;
 
+        // Insufficient funds
         if (amount > balance) {
-            // decide ephemeral behavior:
-            // - respect caller flags (opts.flags or opts.ephemeral)
-            // - otherwise, make insufficient-funds ephemeral when amount came from the slash integer option
-            const amountFromSlashOption = typeof opts.amount !== 'number' && !!interaction.options?.getInteger('amount');
-            const ephemeralForInsuff = callerFlags ?? (amountFromSlashOption ? MessageFlags.Ephemeral : undefined);
-            const insuffFlags = ephemeralForInsuff ? { flags: ephemeralForInsuff } : {};
-
-            try {
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: 'You do not have enough points to make this gamble.', ...insuffFlags });
-                } else if (interaction.deferred) {
-                    await interaction.editReply('You do not have enough points to make this gamble.');
-                } else {
-                    await interaction.followUp({ content: 'You do not have enough points to make this gamble.', ...insuffFlags });
-                }
-                // Auto-delete the reply after 30 seconds if ephemeral
-                if (ephemeral) {
-                    setTimeout(async () => {
-                        try {
-                            await interaction.deleteReply();
-                        } catch (_err) {
-                            // ignore
-                        }
-                    }, 30000);
-                }
-            } catch (_err) {
-                console.error('Failed to notify insufficient funds:', err);
+            const insuffMsg = 'You do not have enough points to make this gamble.';
+            const sent = await safeReply(interaction, { content: insuffMsg, flags: replyFlags });
+            // Auto-delete ephemeral replies (best-effort)
+            if (ephemeralFlag && sent) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (_) { /* ignore */ }
+                }, 30000);
             }
             return;
         }
 
-        // Defer reply if not already (respect ephemeral option)
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply(deferOpts);
-            }
-        } catch (_err) {
-            console.error('Failed to defer gamble reply:', _err);
-        }
-
-        // 50/50 gamble
+        // Perform gamble (50/50)
         const win = Math.random() < 0.5;
         try {
             const balanceChange = win ? amount : -amount;
@@ -107,78 +80,57 @@ module.exports = {
             );
 
             if (!updateResult.success) {
-                const errorMsg = 'An error occurred while processing your gamble.';
-                if (interaction.deferred) {
-                    await interaction.editReply(errorMsg);
-                } else {
-                    await interaction.followUp({ content: errorMsg, ...flags });
-                }
+                await safeReply(interaction, { content: 'An error occurred while processing your gamble.', flags: MessageFlags.Ephemeral });
                 return;
             }
 
-            if (win) {
-                if (interaction.deferred) {
-                    await interaction.editReply(`🎉 Congratulations! You won ${amount} points!`);
-                } else {
-                    await interaction.followUp({ content: `🎉 Congratulations! You won ${amount} points!`, ...flags });
-                }
-                // Auto-delete the reply after 30 seconds if ephemeral
-                if (ephemeral) {
-                    setTimeout(async () => {
-                        try {
-                            await interaction.deleteReply();
-                        } catch (_err) {
-                            // ignore
-                        }
-                    }, 30000);
-                }
-            } else {
-                if (interaction.deferred) {
-                    await interaction.editReply(`💔 you lost ${amount} points. Better luck next time!`);
-                } else {
-                    await interaction.followUp({ content: `💔 you lost ${amount} points. Better luck next time!`, ...flags });
-                }
-                // Auto-delete the reply after 30 seconds if ephemeral
-                if (ephemeral) {
-                    setTimeout(async () => {
-                        try {
-                            await interaction.deleteReply();
-                        } catch (_err) {
-                            // ignore
-                        }
-                    }, 30000);
-                }
+            const resultMsg = win
+                ? `🎉 Congratulations! You won ${amount.toLocaleString()} points!`
+                : `💔 You lost ${amount.toLocaleString()} points. Better luck next time!`;
+
+            await safeReply(interaction, { content: resultMsg, flags: replyFlags });
+
+            if (ephemeralFlag) {
+                setTimeout(async () => {
+                    try {
+                        await interaction.deleteReply();
+                    } catch (_) { /* ignore */ }
+                }, 30000);
             }
-        } catch (_err) {
-            console.error('Failed during gamble update/reply:', _err);
+        } catch (err) {
+            console.error('Failed during gamble update/reply:', err);
+            // Try to notify user nicely (best effort)
             try {
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: 'Error processing gamble.', ...flags });
-                }
-            } catch { }
+                await safeReply(interaction, { content: 'Error processing gamble.', flags: MessageFlags.Ephemeral });
+            } catch (_) { /* ignore */ }
+            return;
         }
 
-        // ANNOUNCEMENT: attempt to send a public message to a channel
+        // ANNOUNCEMENT (fire-and-forget, safe)
         (async () => {
             try {
-                // channel priority: opts.announceChannelId -> env GAMBLING_CHANNEL_ID -> channel named "gambling" -> guild.systemChannel -> first text channel
                 const announceChannelId = opts.announceChannelId ?? process.env.GAMBLING_CHANNEL_ID;
                 let announceChannel = null;
 
                 if (announceChannelId && interaction.guild) {
-                    announceChannel = interaction.guild.channels.cache.get(announceChannelId) ?? await interaction.guild.channels.fetch(announceChannelId).catch(() => null);
+                    announceChannel = interaction.guild.channels.cache.get(announceChannelId)
+                        ?? await interaction.guild.channels.fetch(announceChannelId).catch(() => null);
                 }
 
                 if (!announceChannel && interaction.guild) {
-                    announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'gambling' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
+                    announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'gambling' && ch.isTextBased?.())
+                        || interaction.guild.systemChannel
+                        || interaction.channel;
                 }
 
-                if (!announceChannel) { return; }
+                if (!announceChannel) return;
 
-                msg = win ? `🎉 ${interaction.user} Won ${amount} points!` : `💔 ${interaction.user} lost ${amount} points.`;
+                const announceMsg = win
+                    ? `🎉 ${interaction.user} won ${amount.toLocaleString()} points!`
+                    : `💔 ${interaction.user} lost ${amount.toLocaleString()} points.`;
 
-                await announceChannel.send({ content: msg, timestamp: Date.now() });
-            } catch (_err) {
+                await announceChannel.send({ content: announceMsg });
+            } catch (err) {
                 console.error('Failed to send GAMBLING announcement:', err);
             }
         })();

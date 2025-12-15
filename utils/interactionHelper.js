@@ -11,6 +11,22 @@ const { MessageFlags } = require('discord.js');
  * @param {boolean} options.ephemeral - Whether message should be ephemeral
  * @param {number} options.deleteAfterMs - Auto-delete after milliseconds (default: 30000 for ephemeral)
  */
+
+async function safeDefer(interaction, opts = { ephemeral: true }) {
+    try {
+        if (!interaction.deferred && !interaction.replied) {
+            return await interaction.deferReply({ ephemeral: !!opts.ephemeral });
+        }
+        return null;
+    } catch (err) {
+        if (err?.code === 10062) { // Unknown interaction
+            console.warn('safeDefer: interaction expired.');
+            return null;
+        }
+        throw err;
+    }
+}
+
 async function safeReply(interaction, options = {}) {
     const { content, embeds, ephemeral, deleteAfterMs } = options;
     const flags = ephemeral ? MessageFlags.Ephemeral : undefined;
@@ -70,4 +86,5 @@ module.exports = {
     safeReply,
     replyError,
     replySuccess,
+    safeDefer,
 };

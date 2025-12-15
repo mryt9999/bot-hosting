@@ -5,6 +5,7 @@ const taskManager = require('../utils/taskManager');
 const withdrawUtil = require('../utils/withdrawUtil');
 const { updateBalance, setBalance } = require('../utils/dbUtils');
 const transferModel = require('../models/transferSchema');
+const loanModel = require('../models/loanSchema');
 const WITHDRAWAL_LOGS_CHANNEL_ID = process.env.WITHDRAWAL_LOGS_CHANNEL_ID;
 
 // Generate task choices from globalValues
@@ -201,6 +202,15 @@ module.exports = {
                 .addUserOption(option =>
                     option.setName('player')
                         .setDescription('One of the players in the game')
+                        .setRequired(true)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('deleteloan')
+                .setDescription('Delete a loan by its ID')
+                .addStringOption((option) =>
+                    option
+                        .setName('loanid')
+                        .setDescription('The loan ID to delete')
                         .setRequired(true))),
 
     async execute(interaction) {
@@ -763,6 +773,25 @@ module.exports = {
             } catch (error) {
                 console.error('Error paying transfer:', error);
                 await interaction.editReply('❌ An error occurred while processing the transfer payment. Please try again.');
+            }
+        }
+        if (adminSubcommand === 'deleteloan') {
+            const loanId = interaction.options.getString('loanid').trim();
+
+            try {
+                const loan = await loanModel.findById(loanId);
+                if (!loan) {
+                    return await interaction.editReply(`❌ Loan with ID \`${loanId}\` not found.`);
+                }
+
+                await loanModel.findByIdAndDelete(loanId);
+
+                await notifyOwner('deleteloan', `Deleted loan ${loanId} by ${interaction.user.tag} (${interaction.user.id}). Lender: ${loan.lenderId}, Borrower: ${loan.borrowerId}, Amount: ${loan.amount}, Payback: ${loan.paybackAmount}`);
+
+                await interaction.editReply(`✅ Loan \`${loanId}\` deleted successfully.`);
+            } catch (error) {
+                console.error('Error deleting loan:', error);
+                await interaction.editReply('❌ An error occurred while deleting the loan. Please try again.');
             }
         }
         if (adminSubcommand === 'endgame') {
