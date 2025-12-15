@@ -167,11 +167,11 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
         '💰': { mult: 15, tier: 'ultra' },    // ⬇️ 
         '👑': { mult: 7, tier: 'ultra' },    // ⬇️ 
         '💎': { mult: 5, tier: 'super' },  // ⬇️ 
-        '7️⃣': { mult: 3, tier: 'super' },  // ⬇️ 
-        '⭐': { mult: 2.5, tier: 'super' },    // ⬇️ 
-        '🍇': { mult: 1.8, tier: 'rare' },   // ⬇️ 
-        '🍊': { mult: 1.5, tier: 'rare' },   // ⬇️ 
-        '🍉': { mult: 1.2, tier: 'rare' },     // ⬇️ 
+        '7️⃣': { mult: 4, tier: 'super' },  // ⬇️ 
+        '⭐': { mult: 3, tier: 'super' },    // ⬇️ 
+        '🍇': { mult: 2.5, tier: 'rare' },   // ⬇️ 
+        '🍊': { mult: 2, tier: 'rare' },   // ⬇️ 
+        '🍉': { mult: 1.5, tier: 'rare' },     // ⬇️ 
         '🍒': { mult: 1, tier: 'common' },// ⬇️ 
         '🍋': { mult: 0.5, tier: 'common' }  // ⬇️ 
     };
