@@ -583,7 +583,7 @@ async function handleRepay(interaction, profileData) {
             .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
             .setTimestamp();
 
-        await safeReply(interaction, { embeds: [confirmEmbed] });
+        await safeReply(interaction, { embeds: [confirmEmbed], ephemeral: false });
 
         // Notify lender if fully paid
         if (isFullyPaid) {
@@ -591,7 +591,6 @@ async function handleRepay(interaction, profileData) {
                 const lender = await interaction.client.users.fetch(loan.lenderId);
                 const lenderEmbed = new EmbedBuilder()
                     .setTitle('✅ Loan Fully Repaid')
-                    .setColor(0x2ECC71)
                     .setDescription(`<@${loan.borrowerId}> has fully repaid their loan!`)
                     .addFields(
                         { name: 'Amount Received', value: `🪙 ${loan.paybackAmount.toLocaleString()} points`, inline: false },
@@ -838,6 +837,11 @@ async function enforceLoan(loanId, client) {
 
         if (!loan || loan.status !== 'active') {
             return; // Loan was already paid or doesn't exist
+        }
+
+        //return if the loans dueAt isnt due yet (might be called early)
+        if (loan.dueAt > Date.now()) {
+            return;
         }
 
         const remainingAmount = loan.paybackAmount - loan.amountPaid;
@@ -1145,6 +1149,22 @@ async function autoRepayOverdueLoans(client) {
         await autoRepayLoans(loan.borrowerId, client);
     }
 }
+async function resolveWrongOverdueLoans(client) {
+    try {
+        const wronglyOverdueLoans = await loanModel.find({
+            status: 'overdue',
+            dueAt: { $gt: Date.now() }
+        });
+        for (const loan of wronglyOverdueLoans) {
+            await loanModel.findByIdAndUpdate(loan._id, {
+                status: 'active'
+            });
+            console.log(`Resolved wrongly overdue loan ${loan._id}, set status back to active.`);
+        }
+    } catch (error) {
+        console.error('Failed to resolve wrongly overdue loans:', error);
+    }
+}
 
 // Export functions
 module.exports.startPendingLoanCleanup = startPendingLoanCleanup;
@@ -1152,3 +1172,4 @@ module.exports.rescheduleActiveLoans = rescheduleActiveLoans;
 module.exports.autoRepayLoans = autoRepayLoans;
 module.exports.processLoanAcceptance = processLoanAcceptance;
 module.exports.autoRepayOverdueLoans = autoRepayOverdueLoans;
+module.exports.resolveWrongOverdueLoans = resolveWrongOverdueLoans;

@@ -2,7 +2,7 @@ const { Events } = require('discord.js');
 const profileModel = require('../models/profileSchema');
 const mongoose = require('mongoose');
 const { roleRequirements } = require('../globalValues.json');
-const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans } = require('../commands/loan');
+const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans, resolveWrongOverdueLoans } = require('../commands/loan');
 const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker');
 const { recoverCrashedGames } = require('../utils/gameRecovery');
 
@@ -38,6 +38,13 @@ module.exports = {
 
         // Recover any crashed games from previous sessions
         await recoverCrashedGames(client);
+
+        //resolve wrongly marked overdue loans
+        try {
+            await resolveWrongOverdueLoans(client);
+        } catch (error) {
+            console.error('Failed to resolve wrongly marked overdue loans:', error);
+        }
 
         // Reschedule active loans
         try {

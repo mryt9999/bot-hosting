@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const dbUtils = require('../utils/dbUtils');
+const { safeDefer, safeReply } = require('../utils/interactionHelper');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,12 +14,10 @@ module.exports = {
     async execute(interaction, profileData) {
         try {
             const betAmount = interaction.options.getInteger('bet');
+            await safeDefer(interaction, { ephemeral: false });
 
             if (profileData.balance < betAmount) {
-                return await interaction.reply({
-                    content: `❌ Insufficient balance! You have ${profileData.balance.toLocaleString()} points.`,
-                    flags: [MessageFlags.Ephemeral]
-                });
+                return await safeReply(interaction, { content: `❌ Insufficient balance! You have ${profileData.balance.toLocaleString()} points.`, ephemeral: true });
             }
 
             const dice1 = Math.floor(Math.random() * 6) + 1;
@@ -75,7 +74,7 @@ module.exports = {
                 .setColor(color)
                 .setTimestamp();
 
-            await interaction.reply({ embeds: [diceEmbed] });
+            await safeReply(interaction, { embeds: [diceEmbed] });
 
         } catch (error) {
             console.error('Error in dice command:', error);

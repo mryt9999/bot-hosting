@@ -14,9 +14,11 @@ module.exports = {
                 .setMinValue(1)),
     async execute(interaction, profileData, opts = {}) {
         // Resolve flags/ephemeral preferences from opts
+
         const flagsValue = opts.flags;
         const ephemeralFlag = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
         const replyFlags = flagsValue ?? (ephemeralFlag ? MessageFlags.Ephemeral : undefined);
+        const ephemeral = replyFlags ? (replyFlags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : false;
 
         // Defer early for normal slash commands (modal submits should not be deferred)
         if (!opts.invokedByModal) {
@@ -56,7 +58,7 @@ module.exports = {
         // Insufficient funds
         if (amount > balance) {
             const insuffMsg = 'You do not have enough points to make this gamble.';
-            const sent = await safeReply(interaction, { content: insuffMsg, flags: replyFlags });
+            const sent = await safeReply(interaction, { content: insuffMsg, ephemeral: true });
             // Auto-delete ephemeral replies (best-effort)
             if (ephemeralFlag && sent) {
                 setTimeout(async () => {
@@ -88,7 +90,7 @@ module.exports = {
                 ? `🎉 Congratulations! You won ${amount.toLocaleString()} points!`
                 : `💔 You lost ${amount.toLocaleString()} points. Better luck next time!`;
 
-            await safeReply(interaction, { content: resultMsg, flags: replyFlags });
+            await safeReply(interaction, { content: resultMsg, ephemeral: ephemeral });
 
             if (ephemeralFlag) {
                 setTimeout(async () => {
