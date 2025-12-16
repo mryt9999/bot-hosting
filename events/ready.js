@@ -39,6 +39,10 @@ module.exports = {
         // Recover any crashed games from previous sessions
         await recoverCrashedGames(client);
 
+        //start pointdrop scheduler
+        const pointDropHandler = require('./pointDrop');
+        await pointDropHandler.execute(client);
+
         //resolve wrongly marked overdue loans
         try {
             await resolveWrongOverdueLoans(client);

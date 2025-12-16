@@ -88,7 +88,7 @@ function createLotteryEmbed(lottery, ended = false) {
             });
         }
     } else if (isAnimal) {
-        embed.setTitle('🏇 Animal Race Lottery (24 Hour)')
+        embed.setTitle('🏇 Animal Race Lottery (48 Hour)')
             .setDescription(
                 ended
                     ? '**This race has ended.**'

@@ -10,6 +10,24 @@
     "messagesNeededForTrivia": 20,
     "triviaMinCooldownInMinutes": 60,
     "triviaMaxCooldownInMinutes": 120,
+    "pointDropAmounts": [
+        2000,
+        3000,
+        4000,
+        5000
+    ],
+    "pointDropCooldownInMinutes": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50
+    ],
     "pendingTransfersRoleId": "1439387979067162654",
     "genSupplierRoleId": "1438873118922903663",
     "gensAfterGodly": [
