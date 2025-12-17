@@ -14,14 +14,33 @@ const taskChoices = Object.values(globalValues.taskInfo).map(task => ({
     value: task.taskName
 }));
 
+// Generate job choices from globalValues, only include jobs that have jobName defined
+const jobChoices = globalValues.paidRoleInfo
+    .filter(job => job.jobName) // Filter out entries without jobName
+    .map(job => ({
+        name: job.jobName,
+        value: job.jobName
+    }));
+
+const jobRoleIds = globalValues.paidRoleInfo
+    .filter(job => job.jobName) // Filter out entries without jobName
+    .map(job => ({
+        name: job.roleId,
+        value: job.roleId
+    }));
+
 // Your user ID - replace with your actual Discord user ID
 const OWNER_USER_ID = '984131525715054653'; //owner's user ID to dm
+
+const ADMIN_ROLE_ID = globalValues.adminRoleId; // Admin role ID from global values
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('admin')
         .setDescription('Access to all the admin commands')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+
+        //give users with admin role permission to view and use this command
+        .setDefaultMemberPermissions(PermissionFlagsBits.ChangeNickname)
 
         .addSubcommand((subcommand) =>
             subcommand
@@ -211,7 +230,38 @@ module.exports = {
                     option
                         .setName('loanid')
                         .setDescription('The loan ID to delete')
-                        .setRequired(true))),
+                        .setRequired(true)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('givejob')
+                .setDescription('Give a job to a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to give the job to')
+                        .setRequired(true))
+                .addStringOption((option) =>
+                    option
+                        .setName('jobname')
+                        .setDescription('The job to give')
+                        .setRequired(true)
+                        .addChoices(...jobChoices)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('removejob')
+                .setDescription('Remove a job from a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to remove the job from')
+                        .setRequired(true))
+                .addStringOption((option) =>
+                    option
+                        .setName('jobname')
+                        .setDescription('The job to remove')
+                        .setRequired(true)
+                        .addChoices(...jobChoices))),
+
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -236,6 +286,43 @@ module.exports = {
             }
         }
 
+        // function to check if user has permission to run specific subcommand
+        async function hasPermission(user, subcommand) {
+            if (user.id === OWNER_USER_ID) {
+                return true; // Owner has all permissions
+            }
+            console.log("Checking permissions for user:", user.tag, "on subcommand:", subcommand);
+            const member = await interaction.guild.members.fetch(user.id);
+            //if member has admin role, he gains access to givetask subcommand only
+            if (member.roles.cache.has(ADMIN_ROLE_ID)) {
+                //console.log(`User ${user.tag} has admin role.`);n
+                if (subcommand === 'givetask') {
+                    console.log(`User ${user.tag} has admin role and is allowed to run givetask subcommand.`);
+                    return true;
+                }
+
+            }
+            if (subcommand === 'givejob' || subcommand === 'removejob') {
+                return true
+            };
+            return false;
+        }
+
+        // check if user has permission to run the subcommand, but also take interaction as param, and if user doesnt have permission, reply with error message
+        //saying "insufficient permissions to run this command"
+        async function checkPermissionOrReply(interaction, subcommand) {
+            const hasPerm = await hasPermission(interaction.user, subcommand);
+
+            if (!hasPerm) {
+                await interaction.editReply("Insufficient permissions to run this command.");
+                return false;
+            }
+            return true;
+        }
+        const permissionGranted = await checkPermissionOrReply(interaction, adminSubcommand);
+        if (!permissionGranted) {
+            return;
+        }
         if (adminSubcommand === 'addpoints') {
             const receiver = interaction.options.getUser('player');
             const amount = interaction.options.getInteger('amount');
@@ -369,6 +456,12 @@ module.exports = {
                     .setTimestamp();
 
                 await interaction.editReply({ embeds: [embed] });
+
+                //notify owner, tell who gave what task to whom
+                //say the interaction user tag, the receiver tag, and the task name
+                await notifyOwner('givetask', `Gave task "${taskName}" to ${receiver.tag} (${receiver.id}) by ${interaction.user.tag} (${interaction.user.id})`);
+
+
 
             } catch (error) {
                 console.error('Error giving task:', error);
@@ -794,6 +887,129 @@ module.exports = {
                 await interaction.editReply('❌ An error occurred while deleting the loan. Please try again.');
             }
         }
+        if (adminSubcommand === 'givejob') {
+            const user = interaction.options.getUser('player');
+            const job = interaction.options.getString('jobname');
+
+            try {
+                const profile = await profileModel.findOne({
+                    userId: user.id,
+                    serverID: interaction.guild.id
+                });
+
+                if (!profile) {
+                    return await interaction.editReply(`❌ User ${user.tag} not found.`);
+                }
+
+                //check if job exists in jobchoices
+                const jobExists = jobChoices.some(j => j.value === job);
+                if (!jobExists) {
+                    console.log('Job does not exist in job choices:', job);
+                    console.log('Available job choices:', jobChoices.map(j => j.value));
+                    return await interaction.editReply(`❌ Job \`${job}\` does not exist.`);
+                }
+
+                //get the member of the user and go trough their roles to see if they have the job role already
+                const userMember = await interaction.guild.members.fetch(user.id);
+                //go trough globalValues.paidRoleInfo to see if any of the roles .jobName matches the job name, and if the user has that role, return error
+                for (const roleInfo of Object.values(globalValues.paidRoleInfo)) {
+                    if (roleInfo.jobName === job) {
+                        if (userMember.roles.cache.has(roleInfo.roleId)) {
+                            return await interaction.editReply(`❌ User ${user.tag} already has the job \`${job}\`.`);
+                        }
+                    }
+                }
+
+                //give the job role to the user
+                let roleIdToGive = null;
+                for (const roleInfo of Object.values(globalValues.paidRoleInfo)) {
+                    if (roleInfo.jobName === job) {
+                        roleIdToGive = roleInfo.roleId;
+                        break;
+                    }
+                }
+                if (!roleIdToGive) {
+                    return await interaction.editReply(`❌ Role ID for job \`${job}\` not found.`);
+                }
+                //check if admin has permission to give this job
+                const hasJobPermission = await this.userHasPermissionToJob(interaction, interaction.user, job);
+                if (!hasJobPermission) {
+                    return await interaction.editReply(`❌ You do not have permission to give the job \`${job}\`.`);
+                }
+
+                //check if user already owns >= globalValues.maxJobsPerUser jobs
+                let userJobCount = 0;
+                for (const roleInfo of Object.values(globalValues.paidRoleInfo)) {
+                    //also make sure its a job that exists in jobChoices
+                    const jobExistsInChoices = jobChoices.some(j => j.value === roleInfo.jobName);
+                    if (jobExistsInChoices && userMember.roles.cache.has(roleInfo.roleId)) {
+                        userJobCount += 1;
+                    }
+                }
+                if (userJobCount >= globalValues.maxJobsPerUser) {
+                    return await interaction.editReply(`❌ User ${user.tag} already has the maximum number of jobs (${globalValues.maxJobsPerUser}).`);
+                }
+
+                await userMember.roles.add(roleIdToGive);
+
+                await notifyOwner('givejob', `Gave job ${job} to user ${user.tag} (${user.id})`);
+
+                await interaction.editReply(`✅ Job \`${job}\` given to user ${user.tag}.`);
+            } catch (error) {
+                console.error('Error giving job:', error);
+                await interaction.editReply('❌ An error occurred while giving the job. Please try again.');
+            }
+        }
+        if (adminSubcommand === 'removejob') {
+            const user = interaction.options.getUser('player');
+            const job = interaction.options.getString('jobname');
+            try {
+                const profile = await profileModel.findOne({
+                    userId: user.id,
+                    serverID: interaction.guild.id
+                });
+                if (!profile) {
+                    return await interaction.editReply(`❌ User ${user.tag} not found.`);
+                }
+                //check if job exists in jobchoices
+                const jobExists = jobChoices.some(j => j.value === job);
+                if (!jobExists) {
+                    return await interaction.editReply(`❌ Job \`${job}\` does not exist.`);
+                }
+
+                //get the member of the user and go trough their roles to see if they have the job role
+                const userMember = await interaction.guild.members.fetch(user.id);
+                //go trough globalValues.paidRoleInfo to see if any of the roles .jobName matches the job name, and if the user has that role, remove it
+                let roleIdToRemove = null;
+                for (const roleInfo of Object.values(globalValues.paidRoleInfo)) {
+                    if (roleInfo.jobName === job) {
+                        if (!userMember.roles.cache.has(roleInfo.roleId)) {
+                            return await interaction.editReply(`❌ User ${user.tag} does not have the job \`${job}\`.`);
+                        }
+                        roleIdToRemove = roleInfo.roleId;
+                        break;
+                    }
+                }
+                if (!roleIdToRemove) {
+                    return await interaction.editReply(`❌ Role ID for job \`${job}\` not found.`);
+                }
+
+                //check if admin has permission to remove this job
+                const hasJobPermission = await this.userHasPermissionToJob(interaction, interaction.user, job);
+                if (!hasJobPermission) {
+                    return await interaction.editReply(`❌ You do not have permission to remove the job \`${job}\`.`);
+                }
+                await userMember.roles.remove(roleIdToRemove);
+
+                await notifyOwner('removejob', `Removed job ${job} from user ${user.tag} (${user.id})`);
+                await interaction.editReply(`✅ Job \`${job}\` removed from user ${user.tag}.`);
+            } catch (error) {
+                console.error('Error removing job:', error);
+                await interaction.editReply('❌ An error occurred while removing the job. Please try again.');
+            }
+        }
+
+
         if (adminSubcommand === 'endgame') {
             return await this.endGame(interaction, notifyOwner);
         }
@@ -810,7 +1026,24 @@ module.exports = {
 
 
 
+    async userHasPermissionToJob(interaction, user, job) {
+        const member = await interaction.guild.members.fetch(user.id);
 
+        //if users id is 1087129975347486920, and the job name is "Pet Lover", return true
+        if (user.id === '1087129975347486920' && job === 'Pet Lover') {
+            console.log(`User ${user.tag} is the special admin and has permission for job ${job}.`);
+            return true;
+        }
+        //const jobDef = globalValues.jobInfo[job];
+        //if (!jobDef) {
+        //  console.warn(`Job definition for ${job} not found.`);
+        //   return false;
+        //}
+        //if (jobDef.adminOnly) {
+        //    return member.permissions.has(PermissionsBitField.Flags.Administrator);
+        // }
+        return false;
+    },
 
 
 

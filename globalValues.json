@@ -10,6 +10,7 @@
     "messagesNeededForTrivia": 20,
     "triviaMinCooldownInMinutes": 60,
     "triviaMaxCooldownInMinutes": 120,
+    "adminRoleId": "1450568620680806492",
     "pointDropAmounts": [
         2000,
         3000,
