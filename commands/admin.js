@@ -42,7 +42,7 @@ module.exports = {
         .setDescription('Access to all the admin commands')
 
         //give users with admin role permission to view and use this command
-        .setDefaultMemberPermissions(PermissionFlagsBits.ChangeNickname)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
 
         .addSubcommand((subcommand) =>
             subcommand
@@ -321,6 +321,13 @@ module.exports = {
         async function hasPermission(user, subcommand) {
             if (user.id === OWNER_USER_ID) {
                 return true; // Owner has all permissions
+            }
+            //if  user has owner role, he has access to all subcommands
+            if (OWNER_ROLE_ID) {
+                const member = await interaction.guild.members.fetch(user.id);
+                if (member.roles.cache.has(OWNER_ROLE_ID)) {
+                    return true;
+                }
             }
             console.log("Checking permissions for user:", user.tag, "on subcommand:", subcommand);
             const member = await interaction.guild.members.fetch(user.id);
@@ -1059,6 +1066,13 @@ module.exports = {
 
     async userHasPermissionToJob(interaction, user, job) {
         const member = await interaction.guild.members.fetch(user.id);
+
+        //if user has owner role, he has access to all subcommands
+        if (OWNER_ROLE_ID) {
+            if (member.roles.cache.has(OWNER_ROLE_ID)) {
+                return true;
+            }
+        }
 
         //if users id is 1087129975347486920, and the job name is "Pet Lover", return true
         if (user.id === '1087129975347486920' && job === 'Pet Lover') {
