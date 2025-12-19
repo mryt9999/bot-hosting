@@ -27,13 +27,13 @@ module.exports = {
 
         if (!targetId) {
             const msg = 'No recipient specified.';
-            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
+            if (!interaction.replied && !interaction.deferred) { return interaction.reply({ content: msg, ...flags }); }
             return interaction.followUp({ content: msg, ...flags });
         }
 
         if (!amount || isNaN(amount) || amount <= 0) {
             const msg = 'Please provide a valid positive amount to donate.';
-            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
+            if (!interaction.replied && !interaction.deferred) { return interaction.reply({ content: msg, ...flags }); }
             return interaction.followUp({ content: msg, ...flags });
         }
 
@@ -100,8 +100,8 @@ module.exports = {
         } catch (_err) {
             console.error('Failed to execute transferPoints:', err);
             const msg = 'Failed to complete the donation. Please try again later.';
-            if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
-            if (interaction.deferred) {return interaction.editReply({ content: msg });}
+            if (!interaction.replied && !interaction.deferred) { return interaction.reply({ content: msg, ...flags }); }
+            if (interaction.deferred) { return interaction.editReply({ content: msg }); }
             return interaction.followUp({ content: msg, ...flags });
         }
 
@@ -132,8 +132,8 @@ module.exports = {
                 // Other errors (invalid_amount, db_error)
                 console.error('Transfer failed:', transferResult.reason, transferResult.error);
                 const msg = 'Failed to complete the donation. Please try again later.';
-                if (!interaction.replied && !interaction.deferred) {return interaction.reply({ content: msg, ...flags });}
-                if (interaction.deferred) {return interaction.editReply({ content: msg });}
+                if (!interaction.replied && !interaction.deferred) { return interaction.reply({ content: msg, ...flags }); }
+                if (interaction.deferred) { return interaction.editReply({ content: msg }); }
                 return interaction.followUp({ content: msg, ...flags });
             }
         }
@@ -179,7 +179,7 @@ module.exports = {
                 }, 30000);
             }
         } catch (_err) {
-            console.error('Failed to send donate confirmation:', err);
+            console.error('Failed to send donate confirmation:', _err);
             try {
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ content: 'Donation completed, but I failed to send a confirmation.', flags: MessageFlags.Ephemeral });
@@ -202,7 +202,7 @@ module.exports = {
                     announceChannel = interaction.guild.channels.cache.find(ch => ch.name === 'donations' && ch.isTextBased?.()) || interaction.guild.systemChannel || interaction.channel;
                 }
 
-                if (!announceChannel) {return;}
+                if (!announceChannel) { return; }
 
                 // build a public announcement embed (slightly different for channel)
                 const announceEmbed = new EmbedBuilder()

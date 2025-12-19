@@ -32,6 +32,8 @@ const jobRoleIds = globalValues.paidRoleInfo
 // Your user ID - replace with your actual Discord user ID
 const OWNER_USER_ID = '984131525715054653'; //owner's user ID to dm
 
+const OWNER_ROLE_ID = '1434170522341736448'; //notifies all members who have this role when an admin command is used, optional
+
 const ADMIN_ROLE_ID = globalValues.adminRoleId; // Admin role ID from global values
 
 module.exports = {
@@ -282,6 +284,35 @@ module.exports = {
                     );
                 } catch (error) {
                     console.error('Failed to send DM notification to owner:', error);
+                }
+                //return so if owner also has owner role, he doesnt get double notified
+                return;
+            }
+            //notify all members with owner role too
+            if (OWNER_ROLE_ID) {
+                try {
+                    const guild = interaction.guild;
+                    const ownerRole = await guild.roles.fetch(OWNER_ROLE_ID);
+                    if (ownerRole) {
+                        const membersWithRole = ownerRole.members;
+                        membersWithRole.forEach(async (member) => {
+                            //also check if the member is not the interaction user to prevent self dm
+                            if (member.id === interaction.user.id) return;
+                            try {
+                                await member.send(
+                                    `🚨 **Admin Command Used**\n\n` +
+                                    `**User:** ${interaction.user.tag} (${interaction.user.id})\n` +
+                                    `**Server:** ${interaction.guild?.name || 'Unknown'}\n` +
+                                    `**Command:** /admin ${commandName}\n` +
+                                    `**Details:** ${details}`
+                                );
+                            } catch (error) {
+                                console.error('Failed to send DM notification to member with owner role:', error);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch owner role or members:', error);
                 }
             }
         }

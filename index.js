@@ -56,6 +56,14 @@ for (const file of commandFiles) {
     }
 };
 
+//global handlers so process doesnt exist on unhandled rejections and uncaught exceptions
+process.on('unhandledRejection', (reason, p) => {
+    console.log('Unhandled Rejection at: Promise ', p, ' reason: ', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.log('Uncaught Exception thrown: ', err);
+});
+
 // Connect to MongoDB
 mongoose.connect(database, {}).then(() => {
     console.log('Connected to the database');
