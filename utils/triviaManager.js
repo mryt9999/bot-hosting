@@ -38,9 +38,9 @@ function createMultipleChoiceOptions(correctAnswer, wrongOptions, totalOptions =
     return { options, correctAnswer: correctAnswerId };
 }
 
-const HardRewardPoints = 1000;
-const MediumRewardPoints = 750;
-const EasyRewardPoints = 500;
+const HardRewardPoints = 1500;
+const MediumRewardPoints = 1250;
+const EasyRewardPoints = 1000;
 
 //first go trough the logic that will define what the trivia question, answer, etc will be
 //the logic will be a function that handles it all and returns the final object with question, answer, etc
