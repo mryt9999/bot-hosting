@@ -267,6 +267,7 @@ module.exports = {
             subcommand
                 .setName('warn')
                 .setDescription('Issue a warning to a player')
+
                 .addUserOption((option) =>
                     option
                         .setName('player')
@@ -377,6 +378,11 @@ module.exports = {
                 }
                 //if subcommand is warn, clearwarn or viewwarns, allow too
                 if (subcommand === 'warn' || subcommand === 'clearwarn' || subcommand === 'viewwarns') {
+                    console.log(`User ${user.tag} has admin role and is allowed to run ${subcommand} subcommand.`);
+                    return true;
+                }
+                //if subcommand is endgame, viewgames or gameinfo, allow too
+                if (subcommand === 'endgame' || subcommand === 'activegames' || subcommand === 'gameinfo') {
                     console.log(`User ${user.tag} has admin role and is allowed to run ${subcommand} subcommand.`);
                     return true;
                 }
