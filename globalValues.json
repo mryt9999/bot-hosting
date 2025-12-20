@@ -5,7 +5,7 @@
     "maxWithdrawPerWeek": 100000,
     "maxGlobalWithdrawPerWeek": 600000,
     "minPointsPerWithdraw": 10000,
-    "maxGensPerWithdraw": 50,
+    "maxGensPerWithdraw": 100,
     "pointsPerGodlyGen": 1,
     "messagesNeededForTrivia": 20,
     "triviaMinCooldownInMinutes": 60,
