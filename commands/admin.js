@@ -1130,6 +1130,7 @@ module.exports = {
                 const warningsToClear = Math.min(amount, warnings.length);
                 profile.warnings = warnings.slice(0, warnings.length - warningsToClear);
                 await profile.save();
+                await interaction.editReply(`✅ Cleared ${warningsToClear} warning(s) from user ${user.tag}.`);
 
             } catch (error) {
                 console.error('Error clearing warnings:', error);
