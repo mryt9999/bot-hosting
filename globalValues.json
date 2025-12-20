@@ -71,10 +71,25 @@
             "taskName": "TeamGrinding",
             "maxCompletionsPerWeek": 3,
             "pointRewardPerCompletion": 2000
+        },
+        {
+            "taskId": "6",
+            "taskName": "EventHosting",
+            "maxCompletionsPerWeek": 1,
+            "pointRewardPerCompletion": 20000
         }
     ],
     "maxJobsPerUser": 3,
     "paidRoleInfo": [
+        {
+            "roleId": "1437830285319344168",
+            "pointReward": 2000,
+            "jobName": "Executive",
+            "jobDescription": "Helps manage the server, answers questions, and more.",
+            "privateJob": false,
+            "extraWithdrawLimit": 10000,
+            "levelRequirement": 30
+        },
         {
             "roleId": "1437830285319344168",
             "pointReward": 2000,
