@@ -262,8 +262,45 @@ module.exports = {
                         .setName('jobname')
                         .setDescription('The job to remove')
                         .setRequired(true)
-                        .addChoices(...jobChoices))),
-
+                        .addChoices(...jobChoices)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('warn')
+                .setDescription('Issue a warning to a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to warn')
+                        .setRequired(true))
+                .addStringOption((option) =>
+                    option
+                        .setName('reason')
+                        .setDescription('The reason for the warning')
+                        .setRequired(true)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('clearwarn')
+                .setDescription('Remove a warning from a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to remove the warning from')
+                        .setRequired(true))
+                .addIntegerOption((option) =>
+                    option
+                        .setName('amount')
+                        .setDescription('The number of warnings to remove')
+                        .setRequired(true)
+                        .setMinValue(1)))
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('viewwarns')
+                .setDescription('View warnings for a player')
+                .addUserOption((option) =>
+                    option
+                        .setName('player')
+                        .setDescription('The player to view warnings for')
+                        .setRequired(false))),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -336,6 +373,11 @@ module.exports = {
                 //console.log(`User ${user.tag} has admin role.`);n
                 if (subcommand === 'givetask') {
                     console.log(`User ${user.tag} has admin role and is allowed to run givetask subcommand.`);
+                    return true;
+                }
+                //if subcommand is warn, clearwarn or viewwarns, allow too
+                if (subcommand === 'warn' || subcommand === 'clearwarn' || subcommand === 'viewwarns') {
+                    console.log(`User ${user.tag} has admin role and is allowed to run ${subcommand} subcommand.`);
                     return true;
                 }
 
@@ -1046,7 +1088,80 @@ module.exports = {
                 await interaction.editReply('❌ An error occurred while removing the job. Please try again.');
             }
         }
+        if (adminSubcommand === 'viewwarns') {
+            const user = interaction.options.getUser('player');
+            try {
+                const profile = await profileModel.findOne({
+                    userId: user.id,
+                    serverID: interaction.guild.id
+                });
+                if (!profile) {
+                    return await interaction.editReply(`❌ User ${user.tag} not found.`);
+                }
+                const warnings = profile.warnings || [];
+                if (warnings.length === 0) {
+                    return await interaction.editReply(`❌ User ${user.tag} has no warnings.`);
+                }
+                let warningList = '';
+                for (let i = 0; i < warnings.length; i++) {
+                    warningList += `${i + 1}. ${warnings[i].reason} (by ${warnings[i].issuedBy})\n`;
+                }
+                await interaction.editReply(`⚠️ Warnings for user ${user.tag}:\n${warningList}`);
+            } catch (error) {
+                console.error('Error viewing warnings:', error);
+                await interaction.editReply('❌ An error occurred while viewing warnings. Please try again.');
+            }
+        }
+        if (adminSubcommand === 'clearwarn') {
+            const user = interaction.options.getUser('player');
+            const amount = interaction.options.getInteger('amount');
+            try {
+                const profile = await profileModel.findOne({
+                    userId: user.id,
+                    serverID: interaction.guild.id
+                });
+                if (!profile) {
+                    return await interaction.editReply(`❌ User ${user.tag} not found.`);
+                }
+                const warnings = profile.warnings || [];
+                if (warnings.length === 0) {
+                    return await interaction.editReply(`❌ User ${user.tag} has no warnings to clear.`);
+                }
+                const warningsToClear = Math.min(amount, warnings.length);
+                profile.warnings = warnings.slice(0, warnings.length - warningsToClear);
+                await profile.save();
 
+            } catch (error) {
+                console.error('Error clearing warnings:', error);
+                await interaction.editReply('❌ An error occurred while clearing warnings. Please try again.');
+            }
+        }
+        if (adminSubcommand === 'warn') {
+            const user = interaction.options.getUser('player');
+            const reason = interaction.options.getString('reason');
+            try {
+                const profile = await profileModel.findOne({
+                    userId: user.id,
+                    serverID: interaction.guild.id
+                });
+                if (!profile) {
+                    return await interaction.editReply(`❌ User ${user.tag} not found.`);
+                }
+                if (!profile.warnings) {
+                    profile.warnings = [];
+                }
+                profile.warnings.push({
+                    reason: reason,
+                    issuedAt: Date.now(),
+                    issuedBy: interaction.user.tag
+                });
+                await profile.save();
+                await interaction.editReply(`✅ Warning added to user ${user.tag}.`);
+            } catch (error) {
+                console.error('Error issuing warning:', error);
+                await interaction.editReply('❌ An error occurred while issuing the warning. Please try again.');
+            }
+        }
 
         if (adminSubcommand === 'endgame') {
             return await this.endGame(interaction, notifyOwner);

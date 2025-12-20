@@ -43,6 +43,15 @@ const profileSchema = new mongoose.Schema({
     //trivia cooldown tracking
     nextTriviaAvailableAt: { type: Number, default: 0 },
     messagesSinceLastTrivia: { type: Number, default: 0 },
+
+    //warns
+    warnings: [
+        {
+            reason: { type: String, required: true },
+            issuedAt: { type: Number, required: true },
+            issuedBy: { type: String, required: true },
+        },
+    ]
 });
 
 // keep the existing model name to avoid breaking references
