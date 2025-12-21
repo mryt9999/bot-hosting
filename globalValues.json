@@ -83,7 +83,7 @@
     "paidRoleInfo": [
         {
             "roleId": "1437830285319344168",
-            "pointReward": 2000,
+            "pointReward": 3000,
             "jobName": "Executive",
             "jobDescription": "Helps manage the server, answers questions, and more.",
             "privateJob": false,
@@ -91,17 +91,16 @@
             "levelRequirement": 30
         },
         {
-            "roleId": "1437830285319344168",
-            "pointReward": 2000,
-            "jobName": "Executive",
-            "jobDescription": "Helps manage the server, answers questions, and more.",
-            "privateJob": false,
-            "extraWithdrawLimit": 10000,
-            "levelRequirement": 30
+            "roleId": "1452087913150939270",
+            "pointReward": 2500,
+            "jobName": "Content Creator",
+            "jobDescription": "Posts videos to the server.",
+            "privateJob": true,
+            "extraWithdrawLimit": 10000
         },
         {
             "roleId": "1449937294818541742",
-            "pointReward": 2500,
+            "pointReward": 3000,
             "jobName": "Ps Provider",
             "jobDescription": "Provides a Public Private Server.",
             "privateJob": true,
@@ -109,7 +108,7 @@
         },
         {
             "roleId": "1438641566854938654",
-            "pointReward": 2500,
+            "pointReward": 3000,
             "jobName": "Booster",
             "jobDescription": "Boosted the server.",
             "privateJob": true,
@@ -117,7 +116,7 @@
         },
         {
             "roleId": "1438150897757589514",
-            "pointReward": 1250,
+            "pointReward": 1500,
             "jobName": "Bot Tester",
             "jobDescription": "Tests the economy bot, and reports any bugs, glitches, improvements and issues.",
             "privateJob": false,
@@ -125,14 +124,14 @@
         },
         {
             "roleId": "1441877544994472148",
-            "pointReward": 1500,
+            "pointReward": 2000,
             "jobName": "Pet Lover",
             "jobDescription": "Posts images of pets into pets channel.",
             "privateJob": true
         },
         {
             "roleId": "1438340336056537178",
-            "pointReward": 1000,
+            "pointReward": 1250,
             "jobName": "Blunder Announcer",
             "jobDescription": "Announces gambling, loan and other blunders to the blunders channel.",
             "privateJob": false,
@@ -148,7 +147,7 @@
         },
         {
             "roleId": "1438648903741214770",
-            "pointReward": 750,
+            "pointReward": 1000,
             "jobName": "Poll Maker",
             "jobDescription": "Makes random polls about anything in the poll channel.",
             "privateJob": false,
