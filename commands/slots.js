@@ -55,8 +55,8 @@ module.exports = {
 
             await interaction.reply({ embeds: [slotsEmbed] });
 
-            //log rare wins, above multplier 5 if its triple match or above 1 if double match
-            if ((result.matchAmount === 3 && result.multiplier >= 5) || (result.matchAmount === 2 && result.multiplier >= 1)) {
+            //log rare wins, above multplier 5 if its triple match or above 2.6 if double match
+            if ((result.matchAmount === 3 && result.multiplier >= 5) || (result.matchAmount === 2 && result.multiplier >= 2.6)) {
                 try {
                     const logsChannel = await interaction.client.channels.fetch(RARE_SLOTS_LOGS_CHANNEL_ID);
                     if (logsChannel) {
@@ -189,11 +189,11 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
     const matched = symbols.find((s, i) => symbols.indexOf(s) !== i);
 
     const payouts = {
-        '💰': { mult: 15, tier: 'ultra' },    // ⬇️ 
-        '👑': { mult: 7, tier: 'ultra' },    // ⬇️ 
-        '💎': { mult: 5, tier: 'super' },  // ⬇️ 
-        '7️⃣': { mult: 4, tier: 'super' },  // ⬇️ 
-        '⭐': { mult: 3, tier: 'super' },    // ⬇️ 
+        '💰': { mult: 25, tier: 'ultra' },    // ⬇️ 
+        '👑': { mult: 15, tier: 'ultra' },    // ⬇️ 
+        '💎': { mult: 10, tier: 'super' },  // ⬇️ 
+        '7️⃣': { mult: 7, tier: 'super' },  // ⬇️ 
+        '⭐': { mult: 5, tier: 'super' },    // ⬇️ 
         '🍇': { mult: 2.5, tier: 'rare' },   // ⬇️ 
         '🍊': { mult: 2, tier: 'rare' },   // ⬇️ 
         '🍉': { mult: 1.5, tier: 'rare' },     // ⬇️ 
