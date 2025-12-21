@@ -271,7 +271,7 @@ async function handleRPSChoice(interaction) {
 
     if (challengerChoice === opponentChoice) {
         // TIE - REFUND BOTH
-        resultText = '🤝 It\'s a tie! Bets refunded.';
+        resultText = '# 🤝 It\'s a tie! Bets refunded.';
 
         const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
         const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
