@@ -213,6 +213,10 @@
         {
             "roleId": "1437172924313370696",
             "pointRequirement": 1000000
+        },
+        {
+            "roleId": "1452138729694167051",
+            "pointRequirement": 3000000
         }
     ],
     "ArcaneRoleRewards": [
