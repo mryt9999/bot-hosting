@@ -6,7 +6,7 @@ const { safeDefer, safeReply } = require('../utils/interactionHelper');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('gamble')
-        .setDescription('Gamble your points with 50/50 odds')
+        .setDescription('Gamble your points')
         .addIntegerOption(option =>
             option.setName('amount')
                 .setDescription('The amount of points to gamble')
