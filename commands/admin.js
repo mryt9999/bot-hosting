@@ -184,15 +184,26 @@ module.exports = {
                     option.setName('player')
                         .setDescription('One of the players in the game')
                         .setRequired(true))
+                //.addStringOption(option =>
+                //  option.setName('outcome')
+                //   .setDescription('How to resolve the game')
+                //  .setRequired(true)
+                //  .addChoices(
+                //     { name: 'Refund Both Players', value: 'refund' },
+                //      { name: 'Award to Player 1', value: 'player1' },
+                //      { name: 'Award to Player 2', value: 'player2' }
+                //  )))
                 .addStringOption(option =>
-                    option.setName('outcome')
-                        .setDescription('How to resolve the game')
-                        .setRequired(true)
+                    option.setName('refund')
+                        .setDescription('refund both players')
+                        .setRequired(false)
                         .addChoices(
-                            { name: 'Refund Both Players', value: 'refund' },
-                            { name: 'Award to Player 1', value: 'player1' },
-                            { name: 'Award to Player 2', value: 'player2' }
-                        )))
+                            { name: 'Yes', value: 'yes' }
+                        ))
+                .addUserOption(option =>
+                    option.setName('winner')
+                        .setDescription('the winner of the game')
+                        .setRequired(false)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('activegames')
@@ -1217,7 +1228,6 @@ module.exports = {
     async endGame(interaction, notifyOwner) {
         const gameType = interaction.options.getString('type');
         const player = interaction.options.getUser('player');
-        const outcome = interaction.options.getString('outcome');
 
         let gamesMap;
         let gameName;
@@ -1254,6 +1264,18 @@ module.exports = {
         }
 
         const { challengerId, opponentId, betAmount } = foundGame;
+
+        //if options.getString('refund') is true, refund both players, else give win to one player
+        //then do options.getUser('winner') to see who to give win to and determine challenger id and opponent id with that
+        //make sure that if refund is chosen, winner is not chosen, and vice versa
+        //make check whether refund and winner both are chosen, if so return error, or if both are not chosen, also return error
+        if (interaction.options.getString('refund') && interaction.options.getUser('winner')) {
+            return await interaction.editReply('❌ You can only choose either to refund both players or to award a winner, not both.');
+        }
+        if (!interaction.options.getString('refund') && !interaction.options.getUser('winner')) {
+            return await interaction.editReply('❌ You must choose either to refund both players or to award a winner.');
+        }
+        const outcome = interaction.options.getString('refund') ? 'refund' : interaction.options.getUser('winner').id === challengerId ? 'player1' : 'player2';
 
         if (outcome === 'refund') {
             const challengerProfile = await profileModel.findOne({
