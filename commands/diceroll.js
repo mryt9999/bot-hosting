@@ -31,8 +31,11 @@ module.exports = {
             // Balanced payout structure
             if (dice1 === dice2) {
                 // Doubles = win 2x (16.67% chance)
-                winMultiplier = 2;
-                outcome = `🎉 **DOUBLES!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (2x)`;
+                //winMultiplier = 2;
+                //outcome = `🎉 **DOUBLES!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (2x)`;
+                // do ~2% house edge on doubles
+                winMultiplier = 1.95;
+                outcome = `🎉 **DOUBLES!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (1.95x)`;
                 color = 0x2ECC71;
             } else if (total === 7) {
                 // Lucky 7 = win 2x (16.67% chance)
