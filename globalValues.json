@@ -3,7 +3,7 @@
     "dailyMin": 1000,
     "dailyMax": 2000,
     "maxWithdrawPerWeek": 100000,
-    "maxGlobalWithdrawPerWeek": 600000,
+    "maxGlobalWithdrawPerWeek": 800000,
     "minPointsPerWithdraw": 10000,
     "maxGensPerWithdraw": 100,
     "pointsPerGodlyGen": 1,
@@ -187,6 +187,10 @@
         {
             "roleId": "1452138729694167051",
             "pointReward": 15000
+        },
+        {
+            "roleId": "1452145614186877070",
+            "pointReward": 20000
         }
     ],
     "roleRequirements": [
@@ -217,6 +221,10 @@
         {
             "roleId": "1452138729694167051",
             "pointRequirement": 3000000
+        },
+        {
+            "roleId": "1452145614186877070",
+            "pointRequirement": 10000000
         }
     ],
     "ArcaneRoleRewards": [
