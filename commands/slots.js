@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const dbUtils = require('../utils/dbUtils');
+const RARE_SLOTS_LOGS_CHANNEL_ID = process.env.RARE_SLOTS_LOGS_CHANNEL_ID;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -53,6 +54,29 @@ module.exports = {
                 .setTimestamp();
 
             await interaction.reply({ embeds: [slotsEmbed] });
+
+            //log rare wins, above multplier 5 if its triple match or above 1 if double match
+            if ((result.matchAmount === 3 && result.multiplier >= 5) || (result.matchAmount === 2 && result.multiplier >= 1)) {
+                try {
+                    const logsChannel = await interaction.client.channels.fetch(RARE_SLOTS_LOGS_CHANNEL_ID);
+                    if (logsChannel) {
+                        const rareWinEmbed = new EmbedBuilder()
+                            .setTitle('🎰 Rare Slots Win!')
+                            .setDescription(`# ${interaction.user} won big on the slots! \`\`\`\n[ ${reel1} | ${reel2} | ${reel3} ]\n\`\`\`\n${result.message}`)
+                            .addFields(
+                                { name: 'Bet Amount', value: `${betAmount.toLocaleString()} points`, inline: true },
+                                { name: 'Payout Multiplier', value: `${result.multiplier}x`, inline: true },
+                                { name: 'Winnings', value: `${(betAmount * result.multiplier).toLocaleString()} points`, inline: true }
+                            )
+                            .setColor(result.color)
+                            .setTimestamp();
+
+                        await logsChannel.send({ embeds: [rareWinEmbed] });
+                    }
+                } catch (logErr) {
+                    console.error('Failed to log rare slots win:', logErr);
+                }
+            }
 
         } catch (error) {
             console.error('Error in slots command:', error);
@@ -151,7 +175,8 @@ function getTripleMatchPayout(symbol, betAmount) {
     return {
         multiplier: payout.mult,
         message: `${payout.msg} You won ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
-        color: payout.color
+        color: payout.color,
+        matchAmount: 3
     };
 }
 
@@ -182,6 +207,7 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
     return {
         multiplier: payout.mult,
         message: `✨ **DOUBLE ${matched}!** You ${payout.mult > 1 ? 'won' : 'get back'} ${(betAmount * payout.mult).toLocaleString()} points! (${payout.mult}x)`,
-        color: colors[payout.tier]
+        color: colors[payout.tier],
+        matchAmount: 2
     };
 }
