@@ -197,7 +197,7 @@ function getDoubleMatchPayout(reel1, reel2, reel3, betAmount) {
         '🍇': { mult: 2.5, tier: 'rare' },   // ⬇️ 
         '🍊': { mult: 2, tier: 'rare' },   // ⬇️ 
         '🍉': { mult: 1.5, tier: 'rare' },     // ⬇️ 
-        '🍒': { mult: 0.9, tier: 'common' },// ⬇️ //changed to around 2 % house edge from 1 -> 0.9
+        '🍒': { mult: 1, tier: 'common' },// ⬇️ 
         '🍋': { mult: 0.5, tier: 'common' }  // ⬇️ 
     };
 
