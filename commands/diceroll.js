@@ -39,8 +39,8 @@ module.exports = {
                 color = 0x2ECC71;
             } else if (total === 7) {
                 // Lucky 7 = win 2x (16.67% chance)
-                winMultiplier = 2.05;
-                outcome = `🍀 **LUCKY 7!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (2.05x)`;
+                winMultiplier = 2;
+                outcome = `🍀 **LUCKY 7!** You rolled ${dice1} and ${dice2}!\nYou won ${(betAmount * winMultiplier).toLocaleString()} points! (2x)`;
                 color = 0x2ECC71;
             } else if (total >= 8) {
                 // High roll (8-12) = break even (33.33% chance)
