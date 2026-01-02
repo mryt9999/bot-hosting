@@ -72,7 +72,15 @@ module.exports = {
 
         // Perform gamble (50/50)
         //const win = Math.random() < 0.5;
-        const win = Math.random() < 0.5;
+        const PlayerChance = 50;
+        let win;
+        const number = Math.floor(Math.random() * 102);
+        if (number <= PlayerChance) {
+            win = true;
+        } else {
+            win = false;
+        }
+
         try {
             const balanceChange = win ? amount : -amount;
             const updateResult = await updateBalance(
