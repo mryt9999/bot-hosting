@@ -95,6 +95,19 @@ async function handleDeposit(interaction, profileData, opts) {
     if (!recipientId) {
         // Check if user owns a bank
         if (!freshProfileData.bankOwned) {
+            // Check if user has enough funds to purchase bank
+            const flooredBalance = Math.floor(freshProfileData.balance);
+            if (flooredBalance < globalValues.bankFeatureCost) {
+                const embed = new EmbedBuilder()
+                    .setColor('#ff5252')
+                    .setTitle('Insufficient Funds')
+                    .setDescription(`You don't have a bank yet! You need **${globalValues.bankFeatureCost.toLocaleString()}** points but only have **${flooredBalance.toLocaleString()}** points to purchase the bank feature.`)
+                    .setFooter({ text: 'Bank Purchase' });
+
+                if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
+                return interaction.editReply({ embeds: [embed] });
+            }
+
             // Show purchase prompt
             const row = new ActionRowBuilder()
                 .addComponents(
@@ -137,11 +150,12 @@ async function handleDeposit(interaction, profileData, opts) {
         }
 
         // User owns bank, deposit to own bank
-        if (amount > freshProfileData.balance) {
+        const flooredBalance = Math.floor(freshProfileData.balance);
+        if (amount > flooredBalance) {
             const embed = new EmbedBuilder()
                 .setColor('#ff5252')
                 .setTitle('Insufficient Balance')
-                .setDescription(`You need **${amount.toLocaleString()}** points but only have **${freshProfileData.balance.toLocaleString()}** points.`);
+                .setDescription(`You need **${amount.toLocaleString()}** points but only have **${flooredBalance.toLocaleString()}** points.`);
 
             if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
             return interaction.editReply({ embeds: [embed] });
@@ -203,10 +217,11 @@ async function handleDeposit(interaction, profileData, opts) {
     }
 
     if (amount > freshProfileData.balance) {
+        const flooredBalance = Math.floor(freshProfileData.balance);
         const embed = new EmbedBuilder()
             .setColor('#ff5252')
             .setTitle('Insufficient Balance')
-            .setDescription(`You need **${amount.toLocaleString()}** points but only have **${freshProfileData.balance.toLocaleString()}** points.`);
+            .setDescription(`You need **${amount.toLocaleString()}** points but only have **${flooredBalance.toLocaleString()}** points.`);
 
         if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
         return interaction.editReply({ embeds: [embed] });
@@ -222,10 +237,11 @@ async function handleDeposit(interaction, profileData, opts) {
     if (!depositorUpdateResult) {
         // Balance check failed - get current balance for error message
         const currentProfile = await profileModel.findOne({ userId: interaction.user.id, serverID: interaction.guild.id });
+        const flooredBalance = Math.floor(currentProfile?.balance || 0);
         const embed = new EmbedBuilder()
             .setColor('#ff5252')
             .setTitle('Insufficient Balance')
-            .setDescription(`You need **${amount.toLocaleString()}** points but only have **${currentProfile?.balance?.toLocaleString() || '0'}** points.`);
+            .setDescription(`You need **${amount.toLocaleString()}** points but only have **${flooredBalance.toLocaleString()}** points.`);
 
         if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
         return interaction.editReply({ embeds: [embed] });
