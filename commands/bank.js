@@ -520,16 +520,17 @@ async function updatePoliceTax(robberyAmount) {
 
         // Check if we need to apply decay (no robberies in last hour)
         const timeSinceLastRobbery = Date.now() - policeTax.lastUpdatedAt;
-        const ONE_HOUR = 60 * 60 * 1000;
+        const HALF_HOUR = 30 * 60 * 1000;
 
         let currentRate = policeTax.currentTaxRate;
 
-        // Apply decay if more than 1 hour has passed since last robbery
-        if (timeSinceLastRobbery > ONE_HOUR) {
-            const hoursPassed = timeSinceLastRobbery / ONE_HOUR;
-            const decayPerHour = 0.05; // 5% reduction per hour of inactivity
-            const decayAmount = currentRate * decayPerHour * hoursPassed;
-            currentRate = Math.max(currentRate - decayAmount, 0);
+        // Apply exponential decay if more than half hour has passed since last robbery
+        // Each half hour multiplies the rate by 0.95 (5% reduction of CURRENT amount, not original)
+        // Example: 100% → 95% → 90.25% → 85.74% → etc.
+        if (timeSinceLastRobbery > HALF_HOUR) {
+            const halfHoursPassed = timeSinceLastRobbery / HALF_HOUR;
+            const decayFactor = 0.95; // Multiply by 0.95 per half hour
+            currentRate = currentRate * Math.pow(decayFactor, halfHoursPassed);
         }
 
         // Exponential growth formula with diminishing returns
@@ -572,17 +573,18 @@ async function getPoliceTax() {
             });
         }
 
-        // Apply decay based on time since last robbery (without saving)
+        // Apply exponential decay based on time since last robbery (without saving)
+        // Each half hour multiplies the rate by 0.95 (5% reduction of CURRENT amount, not original)
+        // Example: 100% → 95% → 90.25% → 85.74% → etc.
         const timeSinceLastRobbery = Date.now() - policeTax.lastUpdatedAt;
-        const ONE_HOUR = 60 * 60 * 1000;
+        const HALF_HOUR = 30 * 60 * 1000;
 
         let currentRate = policeTax.currentTaxRate;
 
-        if (timeSinceLastRobbery > ONE_HOUR) {
-            const hoursPassed = timeSinceLastRobbery / ONE_HOUR;
-            const decayPerHour = 0.05; // 5% reduction per hour of inactivity
-            const decayAmount = currentRate * decayPerHour * hoursPassed;
-            currentRate = Math.max(currentRate - decayAmount, 0);
+        if (timeSinceLastRobbery > HALF_HOUR) {
+            const halfHoursPassed = timeSinceLastRobbery / HALF_HOUR;
+            const decayFactor = 0.95; // Multiply by 0.95 per half hour
+            currentRate = currentRate * Math.pow(decayFactor, halfHoursPassed);
         }
 
         return currentRate;

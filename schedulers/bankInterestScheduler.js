@@ -12,12 +12,12 @@ const profileModel = require('../models/profileSchema');
  * - 1,000,000 points: ~0.062% hourly (~15k-16k points/day)
  */
 function calculateInterestRate(bankBalance) {
-    const baseRate = 0.01; // 1%
-    const inflectionPoint = 50000; // Balance where we want ~0.5%
-    const exponent = 0.75; // Exponential decay
+    const baseRate = 0.01; // 1% maximum for low balances
+    const inflectionPoint = 55483; // Optimized balance where rate is ~0.5%
+    const exponent = 0.7; // Optimized for slightly slower decay at high balances
 
     const rate = baseRate / (1 + Math.pow(bankBalance / inflectionPoint, exponent));
-    return Math.max(rate, 0); // No minimum floor
+    return Math.max(rate, 0); // No negative rates
 }
 
 /**
