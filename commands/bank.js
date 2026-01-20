@@ -162,7 +162,6 @@ async function handleDeposit(interaction, profileData, opts) {
         }
 
         // Deduct from balance and add to bank using atomic operation
-        const flooredBalance = Math.floor(freshProfileData.balance);
         const updateResult = await profileModel.findOneAndUpdate(
             { userId: interaction.user.id, serverID: interaction.guild.id, balance: { $gte: amount } },
             { $inc: { balance: -amount, bankBalance: amount }, $set: { balance: flooredBalance - amount } },
