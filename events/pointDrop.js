@@ -30,7 +30,7 @@ module.exports = {
                     pointsToDrop = 10000 + pointsDropAmounts[randomIndex];
                     dropEmbed = new EmbedBuilder()
                         .setTitle('🤯 MEGA DROP!!! 🤯')
-                        .setDescription(`🚨 **MASSIVE DROP ALERT!** 🚨\n\nA MEGA drop of **${pointsToDrop.toLocaleString()}** points has appeared!\n\n⚡ BE THE FIRST TO TYPE \`claim\` TO COLLECT THESE POINTS! ⚡\n\n🎯 Only 3 minutes to claim!`)
+                        .setDescription(`🚨 **MASSIVE DROP ALERT!** 🚨\n\nA MEGA drop of **${pointsToDrop.toLocaleString()}** points has appeared!\n\n⚡ BE THE FIRST TO TYPE \`claim\` TO COLLECT THE POINTS! ⚡`)
                         .setColor(0xFF0000) // Red for mega drops
                         .setTimestamp()
                         .setImage('https://media.giphy.com/media/l0HlQ7LRalQqdWfao/giphy.gif');
@@ -66,7 +66,7 @@ module.exports = {
                         if (isMegaDrop) {
                             successEmbed = new EmbedBuilder()
                                 .setTitle('🎊 MEGA DROP CLAIMED! 🎊')
-                                .setDescription(`🏆 **LEGENDARY!** 🏆\n\n<@${m.author.id}> has claimed the **MEGA DROP** of **${pointsToDrop.toLocaleString()}** points!\n\n🎉 What an incredible catch! 🎉`)
+                                .setDescription(`🏆 You have claimed the **MEGA DROP** of **${pointsToDrop.toLocaleString()}** points! 🎉`)
                                 .setColor(0xFF0000)
                                 .setTimestamp();
                         } else {
