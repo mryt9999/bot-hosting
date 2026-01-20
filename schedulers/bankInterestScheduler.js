@@ -14,7 +14,7 @@ const profileModel = require('../models/profileSchema');
 function calculateInterestRate(bankBalance) {
     const baseRate = 0.01; // 1% maximum for low balances
     const inflectionPoint = 55483; // Optimized balance where rate is ~0.5%
-    const exponent = 0.7; // Optimized for slightly slower decay at high balances
+    const exponent = 0.688; // Optimized for slightly slower decay at high balances
 
     const rate = baseRate / (1 + Math.pow(bankBalance / inflectionPoint, exponent));
     return Math.max(rate, 0); // No negative rates
@@ -38,7 +38,7 @@ async function applyBankInterest() {
             const interestEarned = Math.floor(profile.bankBalance * rate);
 
             if (interestEarned > 0) {
-                profile.bankBalance += interestEarned;
+                profile.bankBalance = Math.floor(profile.bankBalance + interestEarned);
                 await profile.save();
                 totalUsersReceivingInterest++;
                 totalPointsGenerated += interestEarned;
