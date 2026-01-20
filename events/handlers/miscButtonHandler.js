@@ -375,8 +375,11 @@ async function handleBankPurchase(interaction) {
                 bankOwned: false  // Only allow purchase if bank not already owned
             },
             {
-                $inc: { balance: -globalValues.bankFeatureCost },
-                $set: { bankOwned: true, bankBalance: 0, balance: Math.floor(currentProfile.balance - globalValues.bankFeatureCost) }
+                $set: {
+                    balance: Math.floor(currentProfile.balance - globalValues.bankFeatureCost),
+                    bankOwned: true,
+                    bankBalance: 0
+                }
             },
             { new: true }
         );
