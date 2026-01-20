@@ -115,7 +115,7 @@ module.exports = {
                 { serverId: interaction.guild?.id ?? null }
             );
 
-            if (!updateResult.success) {
+            if (!balanceUpdateResult.success) {
                 const msg = 'Error claiming daily.';
                 if (interaction.deferred) {
                     await interaction.editReply(msg);

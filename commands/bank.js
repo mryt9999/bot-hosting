@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, MessageFlags, ActionRowBuilder, Butto
 const mongoose = require('mongoose');
 const profileModel = require('../models/profileSchema');
 const bankModel = require('../models/bankSchema');
+const policeTaxModel = require('../models/policeTaxSchema');
 const globalValues = require('../globalValues.json');
 const { calculateInterestRate } = require('../schedulers/bankInterestScheduler');
 
@@ -404,7 +405,7 @@ async function handleView(interaction, profileData, opts) {
 
 const DEFENSES = {
     minor: { tier: 1, cost: 10000, reduction: 50, duration: 7 * 24 * 60 * 60 * 1000 },
-    normal: { tier: 2, cost: 30000, reduction: 80, duration: 7 * 24 * 60 * 60 * 1000 },
+    normal: { tier: 2, cost: 30000, reduction: 75, duration: 7 * 24 * 60 * 60 * 1000 },
     major: { tier: 3, cost: 100000, reduction: 99, duration: 7 * 24 * 60 * 60 * 1000 }
 };
 
@@ -473,7 +474,7 @@ async function handleBankDefense(interaction, profileData, opts) {
             },
             {
                 name: 'Normal Defense ⚔️',
-                value: `Cost: 30,000 points\nReduction: 80%\nDuration: 7 days`,
+                value: `Cost: 30,000 points\nReduction: 75%\nDuration: 7 days`,
                 inline: true
             },
             {
@@ -494,15 +495,114 @@ async function handleBankDefense(interaction, profileData, opts) {
     return interaction.editReply({ embeds: [embed], components: [row] });
 }
 
-const ROB_COOLDOWN = 4 * 60 * 60 * 1000;
+const ROB_COOLDOWN = 5 * 60 * 60 * 1000;
+/**
+ * Calculate and update police tax based on robbery activity
+ * Uses exponential growth with diminishing returns at higher tax rates
+ * Also decreases tax when robberies are infrequent
+ * 
+ * Increase formula: increase = (robberyAmount / 500) * e^(-currentTaxRate * 4) / 50
+ * Decay formula: If no robberies in 1 hour, decay = currentTaxRate * 0.05 per hour
+ */
+async function updatePoliceTax(robberyAmount) {
+    try {
+        let policeTax = await policeTaxModel.findById('policeTax');
 
+        if (!policeTax) {
+            policeTax = await policeTaxModel.create({
+                _id: 'policeTax',
+                currentTaxRate: 0,
+                totalRobberyAmount: 0,
+                robberyCount: 0,
+                lastUpdatedAt: Date.now()
+            });
+        }
+
+        // Check if we need to apply decay (no robberies in last hour)
+        const timeSinceLastRobbery = Date.now() - policeTax.lastUpdatedAt;
+        const ONE_HOUR = 60 * 60 * 1000;
+
+        let currentRate = policeTax.currentTaxRate;
+
+        // Apply decay if more than 1 hour has passed since last robbery
+        if (timeSinceLastRobbery > ONE_HOUR) {
+            const hoursPassed = timeSinceLastRobbery / ONE_HOUR;
+            const decayPerHour = 0.05; // 5% reduction per hour of inactivity
+            const decayAmount = currentRate * decayPerHour * hoursPassed;
+            currentRate = Math.max(currentRate - decayAmount, 0);
+        }
+
+        // Exponential growth formula with diminishing returns
+        // robberyAmount normalized to 500 (smaller baseline for faster growth)
+        // Lower exponent (4 instead of 8) for faster initial growth
+        const baseIncrease = (robberyAmount / 500) * Math.exp(-currentRate * 4) / 50;
+
+        const newTaxRate = Math.min(currentRate + baseIncrease, 0.95); // Cap at 95%
+
+        // Update tax rate, robbery tracking, and timestamp
+        await policeTaxModel.findByIdAndUpdate(
+            'policeTax',
+            {
+                $set: { currentTaxRate: newTaxRate, lastUpdatedAt: Date.now() },
+                $inc: { totalRobberyAmount: robberyAmount, robberyCount: 1 }
+            },
+            { new: true }
+        );
+
+        return newTaxRate;
+    } catch (err) {
+        console.error('Failed to update police tax:', err);
+        return 0;
+    }
+}
+
+/**
+ * Get current police tax rate (with decay applied if needed)
+ */
+async function getPoliceTax() {
+    try {
+        let policeTax = await policeTaxModel.findById('policeTax');
+        if (!policeTax) {
+            policeTax = await policeTaxModel.create({
+                _id: 'policeTax',
+                currentTaxRate: 0,
+                totalRobberyAmount: 0,
+                robberyCount: 0,
+                lastUpdatedAt: Date.now()
+            });
+        }
+
+        // Apply decay based on time since last robbery (without saving)
+        const timeSinceLastRobbery = Date.now() - policeTax.lastUpdatedAt;
+        const ONE_HOUR = 60 * 60 * 1000;
+
+        let currentRate = policeTax.currentTaxRate;
+
+        if (timeSinceLastRobbery > ONE_HOUR) {
+            const hoursPassed = timeSinceLastRobbery / ONE_HOUR;
+            const decayPerHour = 0.05; // 5% reduction per hour of inactivity
+            const decayAmount = currentRate * decayPerHour * hoursPassed;
+            currentRate = Math.max(currentRate - decayAmount, 0);
+        }
+
+        return currentRate;
+    } catch (err) {
+        console.error('Failed to get police tax:', err);
+        return 0;
+    }
+}
 function calculateStealPercentage(bankBalance) {
-    const baseRate = 0.15; // Increased from 0.10 (roughly 1.5x for large balances)
-    const inflectionPoint = 50000;
-    const exponent = 2.5; // Increased from 1.0 for exponentially faster decrease at small amounts
+    // Exponential decay curve - decreases with balance
+    // Drops fast at first, then flattens out
 
-    const rate = baseRate / (1 + Math.pow(bankBalance / inflectionPoint, exponent));
-    return Math.max(rate, 0.001);
+    const maxRate = 0.10; // 10% maximum for low balances
+    const halfPoint = 14743; // Kept the same to anchor low-balance rates
+    const exponent = 0.66; // Slightly lowered for higher rates at large balances while keeping low rates similar
+
+    // Exponential decay: rate = maxRate / (1 + (balance / halfPoint)^exponent)
+    const rate = maxRate / (1 + Math.pow(bankBalance / halfPoint, exponent));
+
+    return rate;
 }
 
 async function handleRob(interaction, profileData, opts) {
@@ -586,6 +686,14 @@ async function handleRob(interaction, profileData, opts) {
         stealAmount = Math.floor(stealAmount * (1 - defenseReduction));
     }
 
+    // Get current police tax and calculate tax amount
+    const policeTaxRate = await getPoliceTax();
+    const taxAmount = Math.floor(stealAmount * policeTaxRate);
+    const amountAfterTax = stealAmount - taxAmount;
+
+    // Update police tax based on this robbery
+    const newPoliceTaxRate = await updatePoliceTax(stealAmount);
+
     // Update target's bank balance atomically
     const targetUpdated = await profileModel.findOneAndUpdate(
         { userId: targetUser.id, serverID: interaction.guild.id },
@@ -604,10 +712,10 @@ async function handleRob(interaction, profileData, opts) {
         return interaction.editReply({ embeds: [embed] });
     }
 
-    // Update robber's balance with the stolen amount
+    // Update robber's balance with the stolen amount (after taxes)
     await profileModel.updateOne(
         { userId: interaction.user.id, serverID: interaction.guild.id },
-        { $inc: { balance: stealAmount } }
+        { $inc: { balance: amountAfterTax } }
     );
 
     try {
@@ -633,7 +741,10 @@ async function handleRob(interaction, profileData, opts) {
                     .addFields(
                         { name: 'Amount Stolen', value: `${stealAmount.toLocaleString()} points`, inline: true },
                         { name: 'Steal Rate', value: `${(stealPercentage * 100).toFixed(2)}%`, inline: true },
-                        { name: 'Target Bank Balance', value: `${targetProfile.bankBalance.toLocaleString()} points`, inline: true }
+                        { name: 'Target Bank Balance', value: `${targetProfile.bankBalance.toLocaleString()} points`, inline: true },
+                        { name: '🚔 Police Tax', value: `${(policeTaxRate * 100).toFixed(2)}%`, inline: true },
+                        { name: 'Tax Amount', value: `${taxAmount.toLocaleString()} points`, inline: true },
+                        { name: 'After Tax', value: `${amountAfterTax.toLocaleString()} points`, inline: true }
                     );
 
                 if (defenseReduction > 0) {
@@ -659,7 +770,10 @@ async function handleRob(interaction, profileData, opts) {
         .addFields(
             { name: 'Amount Stolen', value: `${stealAmount.toLocaleString()} points`, inline: true },
             { name: 'Steal Rate', value: `${(stealPercentage * 100).toFixed(2)}%`, inline: true },
-            { name: 'Target Balance', value: `${targetProfile.bankBalance.toLocaleString()} points`, inline: true }
+            { name: 'Target Balance', value: `${targetProfile.bankBalance.toLocaleString()} points`, inline: true },
+            { name: '🚔 Police Tax', value: `${(policeTaxRate * 100).toFixed(2)}%`, inline: true },
+            { name: 'Tax Paid', value: `${taxAmount.toLocaleString()} points`, inline: true },
+            { name: 'Stolen After Taxes', value: `${amountAfterTax.toLocaleString()} points`, inline: true }
         );
 
     if (defenseReduction > 0) {
@@ -670,7 +784,7 @@ async function handleRob(interaction, profileData, opts) {
         });
     }
 
-    embed.setFooter({ text: 'Next rob available in 4 hours' });
+    embed.setFooter({ text: `Next rob available in ${ROB_COOLDOWN / (60 * 60 * 1000)} hours` });
 
     if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
     return interaction.editReply({ embeds: [embed] });
