@@ -180,16 +180,38 @@ async function handleRPSChallenge(interaction) {
         components: [choiceButtons, forfeitButton]
     });
 
-    setTimeout(() => {
+    setTimeout(async () => {
         if (activeRPSGames.has(gameId)) {
             const game = activeRPSGames.get(gameId);
             if (Object.keys(game.choices).length < 2) {
+                // Both players didn't choose - refund both
+                const challengerProfile = await dbUtils.ensureProfile(challengerId, interaction.guild.id);
+                const opponentProfile = await dbUtils.ensureProfile(opponentId, interaction.guild.id);
+
+                challengerProfile.balance += betAmount;
+                opponentProfile.balance += betAmount;
+
+                await challengerProfile.save();
+                await opponentProfile.save();
+
+                // Trigger balance change events
+                try {
+                    const balanceChangeEvent = require('../../balanceChange');
+                    const challengerMember = await interaction.guild.members.fetch(challengerId);
+                    const opponentMember = await interaction.guild.members.fetch(opponentId);
+                    balanceChangeEvent.execute(challengerMember);
+                    balanceChangeEvent.execute(opponentMember);
+                } catch (err) {
+                    console.error('Failed to trigger balance change event:', err);
+                }
+
                 activeRPSGames.delete(gameId);
                 interaction.message.edit({
-                    content: '⏱️ Game expired - both players did not choose in time.',
+                    content: '⏱️ Game expired - both players did not choose in time. Bets refunded.',
                     embeds: [],
                     components: []
                 }).catch(() => { });
+                await removeActiveGame(gameId);
             }
         }
     }, 30000);

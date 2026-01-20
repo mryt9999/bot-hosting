@@ -51,7 +51,18 @@ const profileSchema = new mongoose.Schema({
             issuedAt: { type: Number, required: true },
             issuedBy: { type: String, required: true },
         },
-    ]
+    ],
+
+    //bank feature
+    bankOwned: { type: Boolean, default: false },
+    bankBalance: { type: Number, default: 0 },
+
+    //bank defense system
+    bankDefenseLevel: { type: Number, default: 0 }, // 0=none, 1=minor, 2=normal, 3=major
+    bankDefenseExpiresAt: { type: Number, default: 0 }, // timestamp when defense expires
+
+    //bank rob cooldown
+    lastRobAt: { type: Number, default: 0 }, // timestamp of last rob attempt
 });
 
 // keep the existing model name to avoid breaking references

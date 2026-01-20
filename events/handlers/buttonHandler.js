@@ -9,7 +9,9 @@ const {
     handleLoanButtons,
     handleCommandMenuButtons,
     handleCloseBackButtons,
-    handleTriviaButtons
+    handleTriviaButtons,
+    handleBankPurchase,
+    handleBankDefensePurchase
 } = require('./miscButtonHandler');
 
 /**
@@ -81,6 +83,16 @@ async function handleButtonInteraction(interaction, profileData, replyEphemeral)
 
     // Loan buttons
     if (await handleLoanButtons(interaction)) {
+        return;
+    }
+
+    // Bank purchase buttons
+    if (await handleBankPurchase(interaction)) {
+        return;
+    }
+
+    // Bank defense buttons
+    if (await handleBankDefensePurchase(interaction)) {
         return;
     }
 

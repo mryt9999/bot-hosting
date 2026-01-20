@@ -41,23 +41,29 @@ module.exports = {
             }
 
             if (totalPay > 0) {
-                // Update lastDailyRolePay timestamp
-                await profileModel.findOneAndUpdate(
-                    { userId: message.author.id, serverID: message.guild.id },
+                // Update lastDailyRolePay timestamp BEFORE awarding points to prevent race condition
+                const updateResult = await profileModel.findOneAndUpdate(
+                    { userId: message.author.id, serverID: message.guild.id, lastDailyRolePay: { $lt: now - 86400000 } },
                     { $set: { lastDailyRolePay: now } },
                     { new: true }
                 );
 
+                if (!updateResult) {
+                    // Payment was already processed in another request, skip
+                    console.log(`Daily role pay already processed for userId: ${message.author.id}`);
+                    return;
+                }
+
                 // Award points using the utility function
-                const updateResult = await updateBalance(
+                const balanceUpdateResult = await updateBalance(
                     message.author.id,
                     totalPay,
                     { client: message.client },
                     { serverId: message.guild?.id ?? null }
                 );
 
-                if (!updateResult.success) {
-                    console.error(`Failed to award daily role pay to ${message.author.id}:`, updateResult.reason);
+                if (!balanceUpdateResult.success) {
+                    console.error(`Failed to award daily role pay to ${message.author.id}:`, balanceUpdateResult.reason);
                 } else {
                     const rolesList = rolesPaidFor.map(r => `@${r.name} (${r.points} points)`).join('\n');
                     await message.channel.send(`<@${message.author.id}>, you have received **${totalPay}** daily points from your roles:\n${rolesList}`);

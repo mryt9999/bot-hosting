@@ -42,7 +42,7 @@ module.exports = {
         .setDescription('Access to all the admin commands')
 
         //give users with admin role permission to view and use this command
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ChangeNickname)
 
         .addSubcommand((subcommand) =>
             subcommand

@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { roleRequirements } = require('../globalValues.json');
 const { rescheduleActiveLoans, startPendingLoanCleanup, autoRepayOverdueLoans, resolveWrongOverdueLoans } = require('../commands/loan');
 const { initializeArcaneRoleChecker } = require('../schedulers/arcaneRoleChecker');
+const { startBankInterestScheduler } = require('../schedulers/bankInterestScheduler');
 const { recoverCrashedGames } = require('../utils/gameRecovery');
 
 const lotteryModel = require('../models/lotterySchema');
@@ -35,6 +36,9 @@ module.exports = {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         initializeArcaneRoleChecker(client);
+
+        // Start bank interest scheduler
+        startBankInterestScheduler();
 
         // Recover any crashed games from previous sessions
         await recoverCrashedGames(client);

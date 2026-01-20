@@ -10,6 +10,7 @@
     "messagesNeededForTrivia": 20,
     "triviaMinCooldownInMinutes": 60,
     "triviaMaxCooldownInMinutes": 120,
+    "bankFeatureCost": 10000,
     "adminRoleId": "1451364444746813470",
     "pointDropAmounts": [
         2000,

@@ -325,15 +325,52 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         await interaction.deferUpdate();
     }
 
+    // Try to transfer points atomically by updating status first
+    // This ensures only ONE request can proceed with the transfer
+    const acceptedAt = Date.now();
+    const dueAt = acceptedAt + loan.duration;
+
+    // Atomically update status from 'pending' to 'active' (only succeeds if still pending)
+    const statusUpdateResult = await loanModel.findByIdAndUpdate(
+        loanId,
+        {
+            status: 'active',
+            acceptedAt: acceptedAt,
+            dueAt: dueAt
+        },
+        { new: true }
+    );
+
+    // Check if the update succeeded (loan was still pending)
+    if (!statusUpdateResult || statusUpdateResult.status !== 'active') {
+        // Loan status was not 'pending' or update failed - another request beat us
+        const message = 'This loan has already been accepted by another request. Please reload to see the current status.';
+        if (interaction.isButton()) {
+            if (isConfirmation) {
+                return await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
+            }
+            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+    }
+
     // Transfer points from lender to borrower
     const transferResult = await transferPoints(loan.lenderId, loan.borrowerId, loan.loanAmount, { interaction });
 
     if (!transferResult.success) {
+        // CRITICAL: Status was already updated but transfer failed!
+        // Revert the status back to pending
+        await loanModel.findByIdAndUpdate(loanId, {
+            status: 'pending',
+            acceptedAt: null,
+            dueAt: null
+        });
+
         let message;
         if (transferResult.reason === 'insufficient_funds') {
-            message = 'The lender no longer has sufficient funds for this loan.';
+            message = 'The lender no longer has sufficient funds for this loan. The loan has been reverted to pending status.';
         } else {
-            message = 'Failed to process the loan. Please try again later.';
+            message = 'Failed to process the loan. The loan has been reverted to pending status. Please try again later.';
         }
 
         if (interaction.isButton()) {
@@ -344,15 +381,6 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         }
         return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
     }
-
-    // Update loan status
-    const acceptedAt = Date.now();
-    const dueAt = acceptedAt + loan.duration;
-    await loanModel.findByIdAndUpdate(loanId, {
-        status: 'active',
-        acceptedAt: acceptedAt,
-        dueAt: dueAt
-    });
 
     // Log to loan-logs channel
     const logEmbed = new EmbedBuilder()
@@ -583,7 +611,7 @@ async function handleRepay(interaction, profileData) {
             .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
             .setTimestamp();
 
-        await safeReply(interaction, { embeds: [confirmEmbed], ephemeral: false });
+        await safeReply(interaction, { embeds: [confirmEmbed], ephemeral: false })
 
         // Notify lender if fully paid
         if (isFullyPaid) {

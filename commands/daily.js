@@ -84,15 +84,31 @@ module.exports = {
         const randomPoints = Math.floor(Math.random() * (dailyMax - dailyMin + 1)) + dailyMin;
 
         try {
-            // Update balance and timestamp
-            await profileModel.findOneAndUpdate(
-                { userId: id },
-                { $set: { lastDaily: Date.now() } },
-                { upsert: true }
+            // Atomically update lastDaily ONLY IF still eligible (cooldown passed)
+            // This prevents two simultaneous claims from both succeeding
+            const now = Date.now();
+            const updateResult = await profileModel.findOneAndUpdate(
+                { userId: id, lastDaily: { $lt: now - 86400000 } },
+                { $set: { lastDaily: now } },
+                { new: true }
             );
 
-            // Update balance using the utility function (which fires the event)
-            const updateResult = await updateBalance(
+            if (!updateResult) {
+                // Cooldown just expired for another request, skip
+                const msg = 'Another claim just went through. Please try again in 24 hours.';
+                if (interaction.deferred) {
+                    await interaction.editReply(msg);
+                } else if (!interaction.replied) {
+                    if (ephemeral) { await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral }); }
+                    else { await interaction.reply({ content: msg }); }
+                } else {
+                    await interaction.followUp({ content: msg, flags: ephemeral ? MessageFlags.Ephemeral : undefined });
+                }
+                return;
+            }
+
+            // Award points using the utility function (which fires the event)
+            const balanceUpdateResult = await updateBalance(
                 id,
                 randomPoints,
                 { interaction },
