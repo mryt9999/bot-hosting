@@ -405,7 +405,7 @@ async function handleView(interaction, profileData, opts) {
 
 const DEFENSES = {
     minor: { tier: 1, cost: 10000, reduction: 50, duration: 7 * 24 * 60 * 60 * 1000 },
-    normal: { tier: 2, cost: 30000, reduction: 75, duration: 7 * 24 * 60 * 60 * 1000 },
+    normal: { tier: 2, cost: 30000, reduction: 80, duration: 7 * 24 * 60 * 60 * 1000 },
     major: { tier: 3, cost: 100000, reduction: 99, duration: 7 * 24 * 60 * 60 * 1000 }
 };
 
@@ -474,7 +474,7 @@ async function handleBankDefense(interaction, profileData, opts) {
             },
             {
                 name: 'Normal Defense ⚔️',
-                value: `Cost: 30,000 points\nReduction: 75%\nDuration: 7 days`,
+                value: `Cost: 30,000 points\nReduction: 80%\nDuration: 7 days`,
                 inline: true
             },
             {
@@ -597,7 +597,7 @@ function calculateStealPercentage(bankBalance) {
 
     const maxRate = 0.10; // 10% maximum for low balances
     const halfPoint = 14743; // Kept the same to anchor low-balance rates
-    const exponent = 0.66; // Slightly lowered for higher rates at large balances while keeping low rates similar
+    const exponent = 0.69; // Slightly lowered for higher rates at large balances while keeping low rates similar
 
     // Exponential decay: rate = maxRate / (1 + (balance / halfPoint)^exponent)
     const rate = maxRate / (1 + Math.pow(bankBalance / halfPoint, exponent));
