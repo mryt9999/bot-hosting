@@ -236,6 +236,7 @@ async function handleAccept(interaction, profileData) {
 // Shared function for accepting loans (used by both command and button)
 async function processLoanAcceptance(interaction, loanId, profileData = null) {
     const userId = interaction.user.id;
+    const isButtonInteraction = interaction.isButton();
 
     // Find the loan
     let loan;
@@ -243,36 +244,24 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         loan = await loanModel.findById(loanId);
     } catch (_error) {
         const message = 'Invalid loan ID. Please check the ID and try again.';
-        if (interaction.isButton()) {
-            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
-        }
-        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        return await safeReply(interaction, { content: message, flags: MessageFlags.Ephemeral });
     }
 
     if (!loan) {
         const message = 'Loan not found. It may have been cancelled or already accepted.';
-        if (interaction.isButton()) {
-            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
-        }
-        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        return await safeReply(interaction, { content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Verify the user is the borrower
     if (loan.borrowerId !== userId) {
         const message = 'This button is not for you. Only the borrower can accept this loan.';
-        if (interaction.isButton()) {
-            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
-        }
-        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        return await safeReply(interaction, { content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Check if loan is still pending
     if (loan.status !== 'pending') {
         const message = `This loan has already been ${loan.status}.`;
-        if (interaction.isButton()) {
-            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
-        }
-        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        return await safeReply(interaction, { content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Calculate interest rate
@@ -284,7 +273,7 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
     const isConfirmation = interaction.customId.startsWith('loan_confirm_');
 
     // If high interest and not a confirmation, show warning
-    if (isHighInterest && !isConfirmation && interaction.isButton()) {
+    if (isHighInterest && !isConfirmation && isButtonInteraction) {
         const warningEmbed = new EmbedBuilder()
             .setTitle('⚠️ High Interest Warning')
             .setColor(0xE74C3C)
@@ -313,16 +302,16 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         const row = new ActionRowBuilder()
             .addComponents(confirmButton, cancelButton);
 
-        return await interaction.reply({
+        return await safeReply(interaction, {
             embeds: [warningEmbed],
             components: [row],
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
         });
     }
 
-    // If this was a confirmation, acknowledge it
-    if (isConfirmation && interaction.isButton()) {
-        await interaction.deferUpdate();
+    // If this was a button interaction, defer with non-ephemeral before processing
+    if (isButtonInteraction) {
+        await safeDefer(interaction, { ephemeral: false });
     }
 
     // Try to transfer points atomically by updating status first
@@ -345,13 +334,7 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
     if (!statusUpdateResult || statusUpdateResult.status !== 'active') {
         // Loan status was not 'pending' or update failed - another request beat us
         const message = 'This loan has already been accepted by another request. Please reload to see the current status.';
-        if (interaction.isButton()) {
-            if (isConfirmation) {
-                return await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
-            }
-            return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
-        }
-        return await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+        return await safeReply(interaction, { content: message, flags: MessageFlags.Ephemeral });
     }
 
     // Transfer points from lender to borrower
@@ -417,40 +400,12 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
         .setFooter({ text: 'Use /loan repay to pay back the loan early' })
         .setTimestamp();
 
-    // If this was a button interaction, update the original message
-    if (interaction.isButton()) {
-        if (isConfirmation) {
-            // Update the confirmation message to remove buttons
-            try {
-                await interaction.editReply({ components: [] });
-            } catch (error) {
-                console.error('Failed to update confirmation message:', error);
-            }
+    // Use safeReply to handle both button and command interactions properly
+    await safeReply(interaction, { embeds: [embed], ephemeral: false });
 
-            // Send follow-up with confirmation
-            await interaction.followUp({ embeds: [embed] });
-
-            // Update the original loan offer message
-            try {
-                const originalMessage = await interaction.channel.messages.fetch(interaction.message.reference?.messageId).catch(() => null);
-                if (originalMessage) {
-                    const disabledButton = new ButtonBuilder()
-                        .setCustomId(`loan_accept_${loan._id}`)
-                        .setLabel('Loan Accepted')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setEmoji('✅')
-                        .setDisabled(true);
-
-                    const disabledRow = new ActionRowBuilder()
-                        .addComponents(disabledButton);
-
-                    await originalMessage.edit({ components: [disabledRow] });
-                }
-            } catch (error) {
-                console.error('Failed to update original loan offer:', error);
-            }
-        } else {
-            // Disable the button
+    // If this was a button interaction, try to update the original button
+    if (isButtonInteraction) {
+        try {
             const disabledButton = new ButtonBuilder()
                 .setCustomId(`loan_accept_${loan._id}`)
                 .setLabel('Loan Accepted')
@@ -461,21 +416,17 @@ async function processLoanAcceptance(interaction, loanId, profileData = null) {
             const disabledRow = new ActionRowBuilder()
                 .addComponents(disabledButton);
 
-            // Update the message to disable the button
-            try {
-                await interaction.update({ components: [disabledRow] });
-            } catch (error) {
-                console.error('Failed to update button:', error);
-                // If update fails, just reply instead
-                await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-                return;
+            // Try to update the original message
+            if (interaction.message?.id) {
+                try {
+                    await interaction.message.edit({ components: [disabledRow] });
+                } catch (error) {
+                    console.error('Failed to disable original button:', error);
+                }
             }
-
-            // Send follow-up with confirmation
-            await interaction.followUp({ embeds: [embed] });
+        } catch (error) {
+            console.error('Failed to update button:', error);
         }
-    } else {
-        await interaction.reply({ embeds: [embed] });
     }
 
     // Notify the lender
@@ -557,8 +508,8 @@ async function handleRepay(interaction, profileData) {
             return await safeReply(interaction, { content: `Insufficient funds. You have ${borrowerBalance.toLocaleString()} points but need ${amountToRepay.toLocaleString()} points to make this payment.`, flags: MessageFlags.Ephemeral });
         }
 
-        // Defer early (decide ephemeral here)
-        await safeDefer(interaction, { ephemeral: true });
+        // Defer early with non-ephemeral (repay should be visible to everyone)
+        await safeDefer(interaction, { ephemeral: false });
 
         // Transfer points (long op)
         const transferResult = await transferPoints(loan.borrowerId, loan.lenderId, amountToRepay, { interaction });
@@ -611,7 +562,7 @@ async function handleRepay(interaction, profileData) {
             .setFooter({ text: isFullyPaid ? 'Thank you for your timely payment!' : 'Future earnings will automatically go toward loan repayment' })
             .setTimestamp();
 
-        await safeReply(interaction, { embeds: [confirmEmbed], ephemeral: false })
+        await safeReply(interaction, { embeds: [confirmEmbed], ephemeral: false });
 
         // Notify lender if fully paid
         if (isFullyPaid) {
