@@ -324,77 +324,63 @@ async function handleBankPurchase(interaction) {
             return true;
         }
 
-        // Get current profile and floor balance to handle decimals
-        const currentProfile = await profileModel.findOne({ userId: interaction.user.id });
-        if (!currentProfile) {
-            await interaction.update({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#ff5252')
-                        .setTitle('Error')
-                        .setDescription('Profile not found.')
-                ],
-                components: []
-            });
-            return true;
-        }
-
-        const flooredBalance = Math.floor(currentProfile.balance);
-
-        // Check if user already owns bank or has insufficient funds
-        if (currentProfile.bankOwned) {
-            await interaction.update({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#ff5252')
-                        .setTitle('Bank Already Owned')
-                        .setDescription('You already own a bank!')
-                ],
-                components: []
-            });
-            return true;
-        }
-
-        if (flooredBalance < globalValues.bankFeatureCost) {
-            await interaction.update({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#ff5252')
-                        .setTitle('Insufficient Funds')
-                        .setDescription(`You need **${globalValues.bankFeatureCost.toLocaleString()}** points but only have **${flooredBalance.toLocaleString()}** points.`)
-                ],
-                components: []
-            });
-            return true;
-        }
-
-        // Purchase bank atomically - deduct balance and set bankOwned in single operation
+        // Purchase bank atomically - deduct balance and set bank owned in single operation
+        // Add a small epsilon to handle floating-point precision issues in comparison
+        //const epsilon = 1e-2; // Small tolerance for floating-point errors
         const updatedProfile = await profileModel.findOneAndUpdate(
             {
                 userId: interaction.user.id,
-                bankOwned: false  // Only allow purchase if bank not already owned
+                balance: { $gte: globalValues.bankFeatureCost },
+                $or: [
+                    { bankOwned: false },  // Explicitly false
+                    { bankOwned: { $exists: false } }  // Missing field
+                ]
             },
             {
-                $set: {
-                    balance: Math.floor(currentProfile.balance - globalValues.bankFeatureCost),
-                    bankOwned: true,
-                    bankBalance: 0
-                }
+                $inc: { balance: -globalValues.bankFeatureCost },
+                $set: { bankOwned: true, bankBalance: 0 }
             },
             { new: true }
         );
 
         if (!updatedProfile) {
-            // Shouldn't reach here given our checks above, but handle it
-            await interaction.update({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#ff5252')
-                        .setTitle('Purchase Failed')
-                        .setDescription('Failed to process your bank purchase. Please try again.')
-                ],
-                components: []
-            });
+            // Check why it failed
+            const currentProfile = await profileModel.findOne({ userId: interaction.user.id });
+            if (!currentProfile) {
+                await interaction.update({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#ff5252')
+                            .setTitle('Error')
+                            .setDescription('Profile not found.')
+                    ],
+                    components: []
+                });
+                return true;
+            }
+
+            if (currentProfile.bankOwned) {
+                await interaction.update({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#ff5252')
+                            .setTitle('Bank Already Owned')
+                            .setDescription('You already own a bank!')
+                    ],
+                    components: []
+                });
+            } else {
+                console.log(updatedProfile);
+                await interaction.update({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#ff5252')
+                            .setTitle('Insufficient Funds')
+                            .setDescription(`You need **${globalValues.bankFeatureCost.toLocaleString()}** points but only have **${currentProfile.balance.toLocaleString()}** points.`)
+                    ],
+                    components: []
+                });
+            }
             return true;
         }
 

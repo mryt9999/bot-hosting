@@ -38,7 +38,7 @@ async function applyBankInterest() {
             const interestEarned = Math.floor(profile.bankBalance * rate);
 
             if (interestEarned > 0) {
-                profile.bankBalance = Math.floor(profile.bankBalance + interestEarned);
+                profile.bankBalance += interestEarned;
                 await profile.save();
                 totalUsersReceivingInterest++;
                 totalPointsGenerated += interestEarned;

@@ -27,7 +27,7 @@ module.exports = {
                 if (isMegaDrop) {
                     // Mega drop: 10k-15k points
                     const randomIndex = Math.floor(Math.random() * pointDropAmounts.length);
-                    pointsToDrop = 10000 + pointsDropAmounts[randomIndex];
+                    pointsToDrop = 10000 + pointDropAmounts[randomIndex];
                     dropEmbed = new EmbedBuilder()
                         .setTitle('🤯 MEGA DROP!!! 🤯')
                         .setDescription(`🚨 **MASSIVE DROP ALERT!** 🚨\n\nA MEGA drop of **${pointsToDrop.toLocaleString()}** points has appeared!\n\n⚡ BE THE FIRST TO TYPE \`claim\` TO COLLECT THE POINTS! ⚡`)

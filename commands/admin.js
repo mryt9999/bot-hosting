@@ -36,6 +36,8 @@ const OWNER_ROLE_ID = '1434170522341736448'; //notifies all members who have thi
 
 const ADMIN_ROLE_ID = globalValues.adminRoleId; // Admin role ID from global values
 
+const GEN_SUPPLIER_ROLE_ID = '1438873118922903663' //role id for the gens supplier role, optional
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('admin')
@@ -398,6 +400,13 @@ module.exports = {
                     return true;
                 }
 
+            }
+            //if member has gen supplier role, he gains acces to paytransfer only
+            if (member.roles.cache.has(GEN_SUPPLIER_ROLE_ID)) {
+                if (subcommand === 'paytransfer') {
+                    console.log(`User ${user.tag} has gen supplier role and is allowed to run paytransfer subcommand.`);
+                    return true;
+                }
             }
             if (subcommand === 'givejob' || subcommand === 'removejob') {
                 return true
