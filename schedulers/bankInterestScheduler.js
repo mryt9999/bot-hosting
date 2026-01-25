@@ -52,7 +52,17 @@ async function applyBankInterest() {
         for (const profile of profiles) {
             if (profile.bankDefenseLevel && profile.bankDefenseExpiresAt) {
                 const timeLeft = profile.bankDefenseExpiresAt - now;
-                if (timeLeft > 0 && timeLeft <= 86400000) { // 24 hours in ms
+                //if the time left is equal or below 0 meaning its expired, set defense level to 0 and defense expire to 0, and give user dm that their defense has expired
+                if (timeLeft <= 0) {
+                    profile.bankDefenseLevel = 0;
+                    profile.bankDefenseExpiresAt = 0;
+                    await profile.save();
+                    //send dm to user
+                    const user = await global.client.users.fetch(profile.userId);
+                    if (user) {
+                        user.send(`⚠️ Your bank defense has expired! You can now add a new defense by purchasing it from the bank defense shop.`);
+                    }
+                } else if (timeLeft > 0 && timeLeft <= 86400000) { // 24 hours in ms
                     //send dm to user
                     const user = await global.client.users.fetch(profile.userId);
                     if (user) {

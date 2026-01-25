@@ -69,10 +69,12 @@ module.exports = {
     },
 };
 
-function handleBankDefenseExpiration(interaction, profile) {
-    if (profile.bankDefenseExpiresAt && profile.bankDefenseExpiresAt < Date.now()) {
-        profile.bankDefenseLevel = 0;
-        profile.bankDefenseExpiresAt = 0;
+function handleBankDefenseExpiration(interaction, profileData) {
+    if (profileData.bankDefenseExpiresAt && profileData.bankDefenseExpiresAt < Date.now()) {
+        //make an atomic update to set defense level to 0 and expiration to 0
+        profileData.bankDefenseLevel = 0;
+        profileData.bankDefenseExpiresAt = 0;
+        profileData.save();
     }
     //send a dm to the user that their defense has expired
     interaction.user.send(`⚠️ Your bank defense has expired. You can purchase a new defense from the /bank defense command to protect your bank from robberies.`);
