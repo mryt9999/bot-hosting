@@ -486,7 +486,7 @@ async function handleBankDefensePurchase(interaction) {
     const now = Date.now();
     const isDefenseActive = profile.bankDefenseExpiresAt > now;
     const timeLeft = profile.bankDefenseExpiresAt - now;
-    const extendTime = false;
+    let extendTime = false;
 
     //if the user wants to purchase a defense of the same tier then their current one, AND their current defense expires in 24 hours or less, then allow them to purchase the same tier defense to extend the time by 7 days.
     if (isDefenseActive && profile.bankDefenseLevel === defense.tier && timeLeft <= 86400000) {
