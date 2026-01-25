@@ -527,7 +527,7 @@ async function handleBankDefensePurchase(interaction) {
             {
                 $inc: { balance: -defense.cost },
                 $set: {
-                    bankDefenseExpiresAt: timeLeft + defense.duration
+                    bankDefenseExpiresAt: now + timeLeft + defense.duration
                 }
             },
             { new: true }

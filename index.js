@@ -20,6 +20,7 @@ const client = new Client({
     partials: [Partials.GuildMember]
 });
 
+global.client = client;
 
 // Load the event files on startup
 const eventsPath = path.join(__dirname, 'events');
