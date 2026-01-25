@@ -46,6 +46,21 @@ async function applyBankInterest() {
         }
 
         console.log(`✅ Bank interest applied to ${totalUsersReceivingInterest} users | Total generated: ${totalPointsGenerated.toLocaleString()} points`);
+
+        // also check defense, if the defense expire is equal or below 24 hours, dm the user that their defense is expiring soon, and that they are able to buy new defense now
+        const now = Date.now();
+        for (const profile of profiles) {
+            if (profile.bankDefenseLevel && profile.bankDefenseExpiresAt) {
+                const timeLeft = profile.bankDefenseExpiresAt - now;
+                if (timeLeft > 0 && timeLeft <= 86400000) { // 24 hours in ms
+                    //send dm to user
+                    const user = await global.client.users.fetch(profile.userId);
+                    if (user) {
+                        user.send(`⚠️ Your bank defense is expiring soon! You can now add more time to your defense by purchasing a new defense.`);
+                    }
+                }
+            }
+        }
     } catch (error) {
         console.error('❌ Error applying bank interest:', error);
     }

@@ -483,14 +483,22 @@ async function handleBankDefensePurchase(interaction) {
         return true;
     }
 
-    // Check if user can upgrade (can only buy if higher tier than current)
     const now = Date.now();
     const isDefenseActive = profile.bankDefenseExpiresAt > now;
+    const timeLeft = profile.bankDefenseExpiresAt - now;
+    const extendTime = false;
 
-    if (isDefenseActive && profile.bankDefenseLevel >= defense.tier) {
+    //if the user wants to purchase a defense of the same tier then their current one, AND their current defense expires in 24 hours or less, then allow them to purchase the same tier defense to extend the time by 7 days.
+    if (isDefenseActive && profile.bankDefenseLevel === defense.tier && timeLeft <= 86400000) {
+        // Extend defense time by 7 days
+        extendTime = true;
+    }
+
+    // Check if user can upgrade (can only buy if higher tier than current), only do if extendTime is false
+    if (isDefenseActive && profile.bankDefenseLevel >= defense.tier && !extendTime) {
         const tierNames = { 1: 'Minor', 2: 'Normal', 3: 'Major' };
         await interaction.update({
-            content: `❌ You can only purchase a higher tier defense. You currently have **${tierNames[profile.bankDefenseLevel]}** defense active.`,
+            content: `❌ You can only purchase a higher tier defense right now. You can add more time to your current defense once expiration date hits under 1 day. You currently have **${tierNames[profile.bankDefenseLevel]}** defense active.`,
             flags: [MessageFlags.Ephemeral]
         });
         return true;
@@ -506,21 +514,42 @@ async function handleBankDefensePurchase(interaction) {
     }
 
     // Purchase defense using atomic operation to prevent concurrent purchases
-    const updatedProfile = await profileModel.findOneAndUpdate(
-        {
-            userId: interaction.user.id,
-            serverID: interaction.guild.id,
-            balance: { $gte: defense.cost }
-        },
-        {
-            $inc: { balance: -defense.cost },
-            $set: {
+    //check if its an extension of time or a new purchase
+    let updatedProfile;
+    if (extendTime) {
+        updatedProfile = await profileModel.findOneAndUpdate(
+            {
+                userId: interaction.user.id,
+                serverID: interaction.guild.id,
+                balance: { $gte: defense.cost },
                 bankDefenseLevel: defense.tier,
-                bankDefenseExpiresAt: now + defense.duration
-            }
-        },
-        { new: true }
-    );
+            },
+            {
+                $inc: { balance: -defense.cost },
+                $set: {
+                    bankDefenseExpiresAt: timeLeft + defense.duration
+                }
+            },
+            { new: true }
+        );
+    }
+    else {
+        updatedProfile = await profileModel.findOneAndUpdate(
+            {
+                userId: interaction.user.id,
+                serverID: interaction.guild.id,
+                balance: { $gte: defense.cost }
+            },
+            {
+                $inc: { balance: -defense.cost },
+                $set: {
+                    bankDefenseLevel: defense.tier,
+                    bankDefenseExpiresAt: now + defense.duration
+                }
+            },
+            { new: true }
+        );
+    }
 
     if (!updatedProfile) {
         // Balance check failed or was modified by another request
@@ -547,8 +576,8 @@ async function handleBankDefensePurchase(interaction) {
         embeds: [
             new EmbedBuilder()
                 .setColor('#4caf50')
-                .setTitle(`${tierEmojis[defense.tier]} Defense Purchased!`)
-                .setDescription(`You purchased a **${tierNames[defense.tier]} Defense** for **${defense.cost.toLocaleString()}** points.`)
+                .setTitle(extendTime ? `${tierEmojis[defense.tier]} Defense Extended!` : `${tierEmojis[defense.tier]} Defense Purchased!`)
+                .setDescription(extendTime ? `You extended your **${tierNames[defense.tier]} Defense** by 7 days.` : `You purchased a **${tierNames[defense.tier]} Defense** for **${defense.cost.toLocaleString()}** points.`)
                 .addFields(
                     { name: 'Reduction', value: `${defense.reduction}% of steal amount blocked`, inline: true },
                     { name: 'Duration', value: '7 days', inline: true },

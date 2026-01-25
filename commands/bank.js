@@ -69,6 +69,15 @@ module.exports = {
     },
 };
 
+function handleBankDefenseExpiration(interaction, profile) {
+    if (profile.bankDefenseExpiresAt && profile.bankDefenseExpiresAt < Date.now()) {
+        profile.bankDefenseLevel = 0;
+        profile.bankDefenseExpiresAt = 0;
+    }
+    //send a dm to the user that their defense has expired
+    interaction.user.send(`⚠️ Your bank defense has expired. You can purchase a new defense from the /bank defense command to protect your bank from robberies.`);
+}
+
 async function handleDeposit(interaction, profileData, opts) {
     const ephemeral = opts.flags ? (opts.flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral : !!opts.ephemeral;
     const callerFlags = opts.flags ?? (opts.ephemeral ? MessageFlags.Ephemeral : undefined);
@@ -376,6 +385,13 @@ async function handleView(interaction, profileData, opts) {
     const interestRate = calculateInterestRate(targetProfile.bankBalance);
     const interestPerHour = Math.floor(targetProfile.bankBalance * interestRate);
 
+    //bank defense info: level 1=minor, level 2=normal, level 3=major
+    //get defense level and expiration from profileData
+    const defenseLevel = targetProfile.bankDefenseLevel || 0;
+    const defenseNames = { 0: 'None', 1: 'Minor', 2: 'Normal', 3: 'Major' };
+    const defenseInfo = defenseNames[defenseLevel] || 'Unknown';
+    const expirationTimestamp = targetProfile.bankDefenseExpiresAt || 0;
+
     const embed = new EmbedBuilder()
         .setColor('#2196f3')
         .setTitle(`${isOwnBank ? 'Your' : `${targetUser.username}'s`} Bank`)
@@ -384,7 +400,8 @@ async function handleView(interaction, profileData, opts) {
             { name: 'Account Balance', value: `${targetProfile.balance.toLocaleString()}`, inline: true },
             { name: 'Total Assets', value: `${(targetProfile.balance + targetProfile.bankBalance).toLocaleString()}`, inline: true },
             { name: '💰 Interest Rate', value: `${(interestRate * 100).toFixed(3)}% per hour`, inline: true },
-            { name: '📈 Interest Earned', value: `${interestPerHour.toLocaleString()} points per hour`, inline: true }
+            { name: '📈 Interest Earned', value: `${interestPerHour.toLocaleString()} points per hour`, inline: true },
+            { name: `🛡️ ${defenseInfo} Defense`, value: `${defenseLevel > 0 && expirationTimestamp > Date.now() ? ` (expires <t:${Math.floor(expirationTimestamp / 1000)}:R>)` : ''}`, inline: true }
         );
 
     if (deposits.length > 0) {
