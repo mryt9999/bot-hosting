@@ -4,7 +4,7 @@ const profileModel = require('../models/profileSchema');
 const bankModel = require('../models/bankSchema');
 const policeTaxModel = require('../models/policeTaxSchema');
 const globalValues = require('../globalValues.json');
-const { calculateInterestRate } = require('../schedulers/bankInterestScheduler');
+const { calculateInterestRate, checkExpiration } = require('../schedulers/bankInterestScheduler');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -377,6 +377,9 @@ async function handleView(interaction, profileData, opts) {
     const interestRate = calculateInterestRate(targetProfile.bankBalance);
     const interestPerHour = Math.floor(targetProfile.bankBalance * interestRate);
 
+    //check for expiration of bank defense
+    await checkExpiration(targetProfile);
+
     //bank defense info: level 1=minor, level 2=normal, level 3=major
     //get defense level and expiration from profileData
     const defenseLevel = targetProfile.bankDefenseLevel || 0;
@@ -434,6 +437,9 @@ async function handleBankDefense(interaction, profileData, opts) {
         if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
         return interaction.editReply({ embeds: [embed] });
     }
+
+    //check for expiration of bank defense
+    await checkExpiration(freshProfileData);
 
     const row = new ActionRowBuilder()
         .addComponents(
@@ -645,6 +651,9 @@ async function handleRob(interaction, profileData, opts) {
         if (!interaction.replied && !interaction.deferred) { return interaction.reply({ embeds: [embed], ...flags }); }
         return interaction.editReply({ embeds: [embed] });
     }
+
+    //check expiration of bank defense for target
+    await checkExpiration(targetProfile);
 
     const now = Date.now();
 

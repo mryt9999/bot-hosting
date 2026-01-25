@@ -19,6 +19,20 @@ function calculateInterestRate(bankBalance) {
     const rate = baseRate / (1 + Math.pow(bankBalance / inflectionPoint, exponent));
     return Math.max(rate, 0); // No negative rates
 }
+async function checkExpiration(profile) {
+    const now = Date.now();
+    if (profile.bankDefenseExpiresAt && profile.bankDefenseExpiresAt <= now) {
+        profile.bankDefenseLevel = 0;
+        profile.bankDefenseExpiresAt = 0;
+        //save
+        await profile.save();
+        //send dm to user
+        const user = await global.client.users.fetch(profile.userId);
+        if (user) {
+            user.send(`⚠️ Your bank defense has expired! You can now add a new defense by purchasing it from the bank defense shop.`);
+        }
+    }
+}
 
 /**
  * Apply interest to all user banks
@@ -93,5 +107,6 @@ function startBankInterestScheduler() {
 module.exports = {
     startBankInterestScheduler,
     calculateInterestRate,
-    applyBankInterest
+    applyBankInterest,
+    checkExpiration
 };
