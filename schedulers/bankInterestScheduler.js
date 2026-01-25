@@ -79,7 +79,7 @@ async function applyBankInterest() {
                     const user = await global.client.users.fetch(profile.userId);
                     try {
                         if (user) {
-                            await user.send(`⚠️ Your bank defense has expired! You can now add a new defense by purchasing it from the bank defense shop.`);
+                            await user.send(`⚠️ Your bank defense has expired! You can add a new defense by purchasing it from the bank defense shop.`);
                         }
                     } catch (err) {
                         console.log(`Could not DM user ${profile.userId} about defense expiration`);
