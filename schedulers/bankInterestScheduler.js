@@ -30,7 +30,7 @@ async function checkExpiration(profile) {
         const user = await global.client.users.fetch(profile.userId);
         try {
             if (user) {
-                await user.send(`⚠️ Your bank defense has expired! You can now add a new defense by purchasing it from the bank defense shop.`);
+                await user.send(`⚠️ Your bank defense has expired! You can add a new defense by purchasing it from the bank defense shop.`);
             }
         } catch (err) {
             console.log(`Could not DM user ${profile.userId} about defense expiration`);
@@ -89,7 +89,7 @@ async function applyBankInterest() {
                     const user = await global.client.users.fetch(profile.userId);
                     try {
                         if (user) {
-                            await user.send(`⚠️ Your bank defense is expiring soon! You can now add more time to your defense by purchasing a new defense.`);
+                            await user.send(`⚠️ Your bank defense is expiring soon! You can now add more time to your current defense by purchasing the same defense.`);
                         }
                     } catch (err) {
                         console.log(`Could not DM user ${profile.userId} about defense expiration`);
